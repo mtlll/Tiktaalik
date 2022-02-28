@@ -1,7 +1,7 @@
 [package]
-name = "rustfish"
+name = "tiktaalik"
 version = "0.1.0"
-authors = ["Syzygy"]
+authors = ["Syzygy", "mtlll"]
 
 [dependencies]
 memmap = "0.6.2"

@@ -32,13 +32,14 @@ impl Prng {
 }
 
 pub fn engine_info(to_uci: bool) -> String {
-//    let months = &"Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec";
+    //    let months = &"Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec";
 
-    format!("Rustfish 10 dev{}",
+    format!(
+        "Tiktaalik",
         if to_uci {
-            "\nid author T. Romstad, M. Costalba, J. Kiiski, G. Linscott"
+            "\nid author Audun Hoem"
         } else {
-            " by Syzygy based on Stockfish"
-        })
+            " by mtlll based on Rustfish"
+        }
+    )
 }
-
