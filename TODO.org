@@ -1,0 +1,18 @@
+#+TITLE: Tiktaalik TODO list
+
+* Refactoring
+** TODO Find things that need refactoring and add them to this list
+*** TODO Read eval code
+*** TODO Read the move ordering heuristic code
+** TODO Refactor search/worker code to make it easier to plug in alternative algorithms
+* Removing
+** TODO Remove any but the most rudimentary strength limits
+* New features
+** TODO More search algorithms(BNS, MCTS, expectiminimax?)
+** TODO 
+* Research
+** TODO ML for move ordering?
+** TODO ablebases?
+** TODO Hierarchical planning?
+** TODO Soar(cognitive architecture)?
+* Bugs
