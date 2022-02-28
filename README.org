@@ -1,0 +1,13 @@
+#+TITLE: Tiktaalik
+
+Tiktaalik is an experimental chess engine based on Rustfish(which is a Rust port of Stockfish, the strongest engine in the world.)
+
+Compile with:
+#+BEGIN_SRC shell
+cargo build --release
+#+END_SRC
+
+* Why?
+Why not?
+* Features
+None that are new, yet
