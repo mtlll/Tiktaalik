@@ -35,11 +35,11 @@ pub fn engine_info(to_uci: bool) -> String {
     //    let months = &"Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec";
 
     format!(
-        "Tiktaalik",
+        "Tiktaalik{}",
         if to_uci {
             "\nid author Audun Hoem"
         } else {
-            " by mtlll based on Rustfish"
+            " by Mtlll based on Rustfish by Syzygy"
         }
     )
 }
