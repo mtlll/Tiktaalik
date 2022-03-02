@@ -1,0 +1,5 @@
+/target
+Cargo.lock
+#apparently Emacs makes autosave files that are either named #file.rs# or .#file.rs. No idea why.
+**/#*#
+**/.#*
