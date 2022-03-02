@@ -5,6 +5,8 @@
 *** TODO Read eval code
 *** TODO Read the move ordering heuristic code
 ** TODO Refactor search/worker code to make it easier to plug in alternative algorithms
+*** DONE Read/comment search/worker code
+*** TODO refactor Mainthread search and root search functions to be more easily modified
 * Removing
 ** TODO Remove any but the most rudimentary strength limits
 * New features
