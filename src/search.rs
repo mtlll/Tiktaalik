@@ -342,22 +342,9 @@ pub fn mainthread_search(pos: &mut Position, th: &threads::ThreadCtrl) {
     stdout().flush().unwrap();
 }
 
-// thread_search() is the main iterative deepening loop. It calls search()
-// repeatedly with increasing depth until the allocated thinking time has
-// been consumed, the user stops the search, or the maximum search depth
-// is reached.
-
-pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
-    let mut stack: Vec<Stack> = Vec::with_capacity((MAX_PLY + 7) as usize);
-
-    let mut last_best_move = Move::NONE;
-    let mut last_best_move_depth = Depth::ZERO;
-
-    let mut time_reduction = 1.0f64;
-
-    // only need to clear 0..7, but for now we do extra work
-    for _ in 0..(MAX_PLY + 7) as usize {
-        stack.push(Stack {
+impl Stack {
+    fn new(pos: &Position) -> Stack {
+        Stack {
             pv: Vec::new(),
             cont_history: pos.cont_history.get(NO_PIECE, Square(0)),
             ply: 0,
@@ -367,28 +354,11 @@ pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
             static_eval: Value::ZERO,
             stat_score: 0,
             move_count: 0,
-        });
+        }
     }
+}
 
-    pos.calls_cnt = 0;
-    pos.nmp_ply = 0;
-    pos.nmp_odd = 0;
-
-    let mut alpha = -Value::INFINITE;
-    let mut delta = -Value::INFINITE;
-    let mut best_value = -Value::INFINITE;
-    let mut beta = Value::INFINITE;
-
-    if pos.is_main {
-        pos.failed_low = false;
-        pos.best_move_changes = 0.0;
-    }
-
-    let us = pos.side_to_move();
-
-    let mut multi_pv = ucioption::get_i32("MultiPV") as usize;
-    multi_pv = std::cmp::min(multi_pv, pos.root_moves.len());
-
+fn compute_contempt(us: Color) -> i32 {
     let mut base_ct = ucioption::get_i32("Contempt") * PawnValueEg.0 / 100;
 
     // In analysis mode, adjust contempt in accordance with user preference
@@ -418,24 +388,116 @@ pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
         evaluate::CONTEMPT = if us == WHITE { contempt } else { -contempt };
     }
 
+    base_ct
+}
+
+fn update_contempt(base_ct: i32, best_value: Value, us: Color) {
+    let ct = base_ct
+        + if best_value > Value(500) {
+            50
+        } else if best_value < Value(-500) {
+            -50
+        } else {
+            best_value.0 / 10
+        };
+    let ct = Score::make(ct, ct / 2);
+    unsafe { evaluate::CONTEMPT = if us == WHITE { ct } else { -ct } }
+}
+
+fn get_max_depth(pos: &Position) -> Depth {
+    if pos.is_main && limits().depth != 0 {
+        std::cmp::min(Depth::MAX, Depth((limits().depth + 1) as i32))
+    } else {
+        Depth::MAX
+    }
+}
+
+fn should_distribute(pos: &Position, depth: Depth) -> bool {
+    if !pos.is_main {
+        let i = ((pos.thread_idx - 1) & 20) as usize;
+        if ((depth / ONE_PLY + pos.game_ply() + SKIP_PHASE[i]) / SKIP_SIZE[i]) % 2 != 0 {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn reset_root_metrics(pos: &mut Position) {
+    pos.calls_cnt = 0;
+    pos.nmp_ply = 0;
+    pos.nmp_odd = 0;
+
+    if pos.is_main {
+        pos.failed_low = false;
+        pos.best_move_changes = 0.0;
+    }
+}
+
+fn update_start(pos: &mut Position, pv_first: &mut usize) {
+    if pos.pv_idx == pos.pv_last {
+        *pv_first = pos.pv_last;
+        pos.pv_last += 1;
+
+        while pos.pv_last < pos.root_moves.len() {
+            if pos.root_moves[pos.pv_last].tb_rank != pos.root_moves[*pv_first].tb_rank {
+                break;
+            }
+
+            pos.pv_last += 1;
+        }
+    }
+}
+
+fn init_stack(pos: &Position) -> Vec<Stack> {
+    let n: usize = (MAX_PLY + 7) as usize;
+    let mut stack = Vec::with_capacity(n);
+
+    // only need to clear 0..7, but for now we do extra work
+    for _ in 0..n as usize {
+        stack.push(Stack::new(pos));
+    }
+
+    stack
+}
+
+// thread_search() is the main iterative deepening loop. It calls search()
+// repeatedly with increasing depth until the allocated thinking time has
+// been consumed, the user stops the search, or the maximum search depth
+// is reached.
+pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
+    let mut stack = init_stack(pos);
+
+    let mut last_best_move = Move::NONE;
+    let mut last_best_move_depth = Depth::ZERO;
+
+    reset_root_metrics(pos);
+
+    let mut alpha = -Value::INFINITE;
+    let mut delta = -Value::INFINITE;
+    let mut best_value = -Value::INFINITE;
+    let mut beta = Value::INFINITE;
+
+    let us = pos.side_to_move();
+
+    let mut multi_pv = ucioption::get_i32("MultiPV") as usize;
+    multi_pv = std::cmp::min(multi_pv, pos.root_moves.len());
+
+    let base_ct = compute_contempt(us);
     let mut root_depth = Depth::ZERO;
+    let max_depth = get_max_depth(pos);
 
     // Iterative deepening loop until requested to stop or the target depth
     // is reached
     while !threads::stop() {
         root_depth += ONE_PLY;
-        if root_depth >= Depth::MAX
-            || (limits().depth != 0 && pos.is_main && root_depth / ONE_PLY > limits().depth as i32)
-        {
+        if root_depth >= max_depth {
             break;
         }
 
         // Distribute search depths across the threads
-        if !pos.is_main {
-            let i = ((pos.thread_idx - 1) & 20) as usize;
-            if ((root_depth / ONE_PLY + pos.game_ply() + SKIP_PHASE[i]) / SKIP_SIZE[i]) % 2 != 0 {
-                continue;
-            }
+        if should_distribute(pos, root_depth) {
+            continue;
         }
 
         // Age out PV variability metric
@@ -447,7 +509,7 @@ pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
         // Save the last iteration's scores before first PV line is searched
         // and all the move scores except the (new) PV are set to
         // -Value::INFINITE.
-        for ref mut rm in pos.root_moves.iter_mut() {
+        for rm in pos.root_moves.iter_mut() {
             rm.previous_score = rm.score;
         }
 
@@ -457,24 +519,14 @@ pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
         // MultiPV loop. We perform a full root search for each PV line.
         pos.pv_idx = 0;
         while pos.pv_idx < multi_pv && !threads::stop() {
-            if pos.pv_idx == pos.pv_last {
-                pv_first = pos.pv_last;
-                pos.pv_last += 1;
-                while pos.pv_last < pos.root_moves.len() {
-                    if pos.root_moves[pos.pv_last].tb_rank != pos.root_moves[pv_first].tb_rank {
-                        break;
-                    }
-                    pos.pv_last += 1;
-                }
-            }
+            update_start(pos, &mut pv_first);
 
             // Reset UCI info sel_depth for each depth and each PV line
             pos.sel_depth = 0;
 
             // Skip the search if we have a mate value from DTM tables
-            if pos.root_moves[pos.pv_idx].tb_rank.abs() > 1000 {
-                best_value = pos.root_moves[pos.pv_idx].tb_score;
-                pos.root_moves[pos.pv_idx].score = best_value;
+            if let Some(score) = have_DTM_mate(pos) {
+                best_value = score;
                 if pos.is_main
                     && (threads::stop() || pos.pv_idx + 1 == multi_pv || timeman::elapsed() > 3000)
                 {
@@ -485,26 +537,12 @@ pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
             }
 
             // Reset aspiration window starting size
-            if root_depth >= 5 * ONE_PLY {
+            if root_depth > 4 * ONE_PLY {
+                let prev_score = pos.root_moves[pos.pv_idx].previous_score;
                 delta = Value(18);
-                alpha = std::cmp::max(
-                    pos.root_moves[pos.pv_idx].previous_score - delta,
-                    -Value::INFINITE,
-                );
-                beta = std::cmp::min(
-                    pos.root_moves[pos.pv_idx].previous_score + delta,
-                    Value::INFINITE,
-                );
-                let ct = base_ct
-                    + (if best_value > Value(500) {
-                        50
-                    } else if best_value < Value(-500) {
-                        -50
-                    } else {
-                        best_value.0 / 10
-                    });
-                let ct = Score::make(ct, ct / 2);
-                unsafe { evaluate::CONTEMPT = if us == WHITE { ct } else { -ct } }
+                alpha = std::cmp::max(prev_score - delta, -Value::INFINITE);
+                beta = std::cmp::min(prev_score + delta, Value::INFINITE);
+                update_contempt(base_ct, best_value, us);
             }
 
             // Start with a small aspiration window and, in the case of a fail
@@ -512,6 +550,7 @@ pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
             // failing high/low.
             loop {
                 best_value = search::<Pv>(pos, &mut stack, alpha, beta, root_depth, false, false);
+
                 update_counters(pos);
 
                 // Bring the best move to the front. It is critical that
@@ -590,56 +629,61 @@ pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
             threads::set_stop(true);
         }
 
-        if !pos.is_main {
-            continue;
-        }
-
         // Do we have time for the next iteration? Can we stop searching now?
-        if limits().use_time_management() && !threads::stop() && !threads::stop_on_ponderhit() {
-            // Stop the search if only one legal move is available or
-            // if all of the available time has been used.
-            let f = [pos.failed_low as i32, (best_value - pos.previous_score).0];
-            let improving_factor =
-                std::cmp::max(246, std::cmp::min(832, 306 + 119 * f[0] - 6 * f[1]));
 
-            let mut unstable_pv_factor = 1. + pos.best_move_changes;
+        if pos.is_main {
+            manage_time(pos, best_value, last_best_move_depth);
+        }
+    } // End of iterative deepening loop
+}
 
-            // if the best_move is stable over several iterations, reduce
-            // time for this move, the longer the move has been stable,
-            // the more. Use part of the gained time from a previous
-            // stable move for the current move.
-            time_reduction = 1.;
-            for i in 3..6 {
-                if last_best_move_depth * i < pos.completed_depth {
-                    time_reduction *= 1.25;
-                }
-                unstable_pv_factor *= pos.previous_time_reduction.powf(0.528) / time_reduction;
+fn have_DTM_mate(pos: &mut Position) -> Option<Value> {
+    if pos.root_moves[pos.pv_idx].tb_rank.abs() > 1000 {
+        let best_value = pos.root_moves[pos.pv_idx].tb_score;
+        pos.root_moves[pos.pv_idx].score = best_value;
+        Some(best_value)
+    } else {
+        None
+    }
+}
 
-                if pos.root_moves.len() == 1
-                    || (timeman::elapsed() as f64)
-                        > (timeman::optimum() as f64)
-                            * unstable_pv_factor
-                            * (improving_factor as f64)
-                            / 581.0
-                {
-                    // If we are allowed to ponder do not stop the search
-                    // now but keep pondering until the GUI sends
-                    // "ponderhit" or "stop".
-                    if threads::ponder() {
-                        threads::set_stop_on_ponderhit(true);
-                    } else {
-                        threads::set_stop(true);
-                    }
+fn manage_time(pos: &mut Position, best_value: Value, last_best_move_depth: Depth) {
+    if limits().use_time_management() && !threads::stop() && !threads::stop_on_ponderhit() {
+        // Stop the search if only one legal move is available or
+        // if all of the available time has been used.
+        let f = [pos.failed_low as i32, (best_value - pos.previous_score).0];
+        let improving_factor = std::cmp::max(246, std::cmp::min(832, 306 + 119 * f[0] - 6 * f[1]));
+
+        let mut unstable_pv_factor = 1. + pos.best_move_changes;
+
+        // if the best_move is stable over several iterations, reduce
+        // time for this move, the longer the move has been stable,
+        // the more. Use part of the gained time from a previous
+        // stable move for the current move.
+        let mut time_reduction = 1.;
+        for i in 3..6 {
+            if last_best_move_depth * i < pos.completed_depth {
+                time_reduction *= 1.25;
+            }
+            unstable_pv_factor *= pos.previous_time_reduction.powf(0.528) / time_reduction;
+
+            if pos.root_moves.len() == 1
+                || (timeman::elapsed() as f64)
+                    > (timeman::optimum() as f64) * unstable_pv_factor * (improving_factor as f64)
+                        / 581.0
+            {
+                // If we are allowed to ponder do not stop the search
+                // now but keep pondering until the GUI sends
+                // "ponderhit" or "stop".
+                if threads::ponder() {
+                    threads::set_stop_on_ponderhit(true);
+                } else {
+                    threads::set_stop(true);
                 }
             }
         }
-    } // End of iterative deepening loop
-
-    if !pos.is_main {
-        return;
+        pos.previous_time_reduction = time_reduction;
     }
-
-    pos.previous_time_reduction = time_reduction;
 }
 
 // search() is the main search function for both PV and non-PV nodes
