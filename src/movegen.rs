@@ -19,37 +19,37 @@ pub struct NonEvasions;
 pub struct Legal;
 
 pub trait GenType {
-    type Checks: Bool;
+    const Checks: bool;
     const TYPE: i32;
 }
 
 impl GenType for Captures {
-    type Checks = False;
+    const Checks: bool = false;
     const TYPE: i32 = CAPTURES;
 }
 
 impl GenType for Quiets {
-    type Checks = False;
+    const Checks: bool = false;
     const TYPE: i32 = QUIETS;
 }
 
 impl GenType for QuietChecks {
-    type Checks = True;
+    const Checks: bool = true;
     const TYPE: i32 = QUIET_CHECKS;
 }
 
 impl GenType for Evasions {
-    type Checks = False;
+    const Checks: bool = false;
     const TYPE: i32 = EVASIONS;
 }
 
 impl GenType for NonEvasions {
-    type Checks = False;
+    const Checks: bool = false;
     const TYPE: i32 = NON_EVASIONS;
 }
 
 impl GenType for Legal {
-    type Checks = False;
+    const Checks: bool = false;
     const TYPE: i32 = LEGAL;
 }
 
@@ -111,7 +111,7 @@ impl Iterator for MoveList {
     }
 }
 
-fn generate_castling<Cr: CastlingRightTrait, Checks: Bool, Chess960: Bool>(
+fn generate_castling<Cr: CastlingRightTrait, const Checks: bool, const Chess960: bool>(
     pos: &Position,
     list: &mut [ExtMove],
     idx: usize,
@@ -132,7 +132,7 @@ fn generate_castling<Cr: CastlingRightTrait, Checks: Bool, Chess960: Bool>(
 
     debug_assert!(pos.checkers() == 0);
 
-    let direction = match Chess960::BOOL {
+    let direction = match Chess960 {
         true => {
             if kto > kfrom {
                 WEST
@@ -160,7 +160,7 @@ fn generate_castling<Cr: CastlingRightTrait, Checks: Bool, Chess960: Bool>(
     // Because we generate only legal castling moves, we need to verify that
     // when moving the castling rook we do not discover some hidden checker.
     // For instance an enemy queen on A1 when the castling rook is on B1.
-    if Chess960::BOOL
+    if Chess960
         && attacks_bb(ROOK, kto, pos.pieces() ^ rfrom) & pos.pieces_cpp(!us, ROOK, QUEEN) != 0
     {
         return idx;
@@ -168,7 +168,7 @@ fn generate_castling<Cr: CastlingRightTrait, Checks: Bool, Chess960: Bool>(
 
     let m = Move::make_special(CASTLING, kfrom, rfrom);
 
-    if Checks::BOOL && !pos.gives_check(m) {
+    if Checks && !pos.gives_check(m) {
         return idx;
     }
 
@@ -352,7 +352,7 @@ fn generate_pawn_moves<Us: ColorTrait, T: GenType>(
     idx
 }
 
-fn generate_moves<Pt: PieceTypeTrait, Checks: Bool>(
+fn generate_moves<Pt: PieceTypeTrait, const Checks: bool>(
     pos: &Position,
     list: &mut [ExtMove],
     mut idx: usize,
@@ -362,7 +362,7 @@ fn generate_moves<Pt: PieceTypeTrait, Checks: Bool>(
     debug_assert!(Pt::TYPE != KING && Pt::TYPE != PAWN);
 
     for from in pos.square_list(us, Pt::TYPE) {
-        if Checks::BOOL {
+        if Checks {
             if (Pt::TYPE == BISHOP || Pt::TYPE == ROOK || Pt::TYPE == QUEEN)
                 && pseudo_attacks(Pt::TYPE, from) & target & pos.check_squares(Pt::TYPE) == 0
             {
@@ -376,7 +376,7 @@ fn generate_moves<Pt: PieceTypeTrait, Checks: Bool>(
 
         let mut b = pos.attacks_from(Pt::TYPE, from) & target;
 
-        if Checks::BOOL {
+        if Checks {
             b &= pos.check_squares(Pt::TYPE);
         }
 
@@ -389,7 +389,7 @@ fn generate_moves<Pt: PieceTypeTrait, Checks: Bool>(
     idx
 }
 
-fn generate_all<Us: ColorTrait, T: GenType>(
+fn generate_all<Us: ColorTrait, T: GenType, const Checks: bool>(
     pos: &Position,
     list: &mut [ExtMove],
     mut idx: usize,
@@ -398,10 +398,10 @@ fn generate_all<Us: ColorTrait, T: GenType>(
     let us = Us::COLOR;
 
     idx = generate_pawn_moves::<Us, T>(pos, list, idx, target);
-    idx = generate_moves::<Knight, T::Checks>(pos, list, idx, us, target);
-    idx = generate_moves::<Bishop, T::Checks>(pos, list, idx, us, target);
-    idx = generate_moves::<Rook, T::Checks>(pos, list, idx, us, target);
-    idx = generate_moves::<Queen, T::Checks>(pos, list, idx, us, target);
+    idx = generate_moves::<Knight, Checks>(pos, list, idx, us, target);
+    idx = generate_moves::<Bishop, Checks>(pos, list, idx, us, target);
+    idx = generate_moves::<Rook, Checks>(pos, list, idx, us, target);
+    idx = generate_moves::<Queen, Checks>(pos, list, idx, us, target);
 
     if T::TYPE != QUIET_CHECKS && T::TYPE != EVASIONS {
         let ksq = pos.square(us, KING);
@@ -414,11 +414,11 @@ fn generate_all<Us: ColorTrait, T: GenType>(
 
     if T::TYPE != CAPTURES && T::TYPE != EVASIONS && pos.can_castle(us) {
         if pos.is_chess960() {
-            idx = generate_castling::<Us::KingSide, T::Checks, True>(pos, list, idx, us);
-            idx = generate_castling::<Us::QueenSide, T::Checks, True>(pos, list, idx, us);
+            idx = generate_castling::<Us::KingSide, Checks, true>(pos, list, idx, us);
+            idx = generate_castling::<Us::QueenSide, Checks, true>(pos, list, idx, us);
         } else {
-            idx = generate_castling::<Us::KingSide, T::Checks, False>(pos, list, idx, us);
-            idx = generate_castling::<Us::QueenSide, T::Checks, False>(pos, list, idx, us);
+            idx = generate_castling::<Us::KingSide, Checks, false>(pos, list, idx, us);
+            idx = generate_castling::<Us::QueenSide, Checks, false>(pos, list, idx, us);
         }
     }
 
@@ -453,9 +453,9 @@ pub fn generate_quiet_checks(pos: &Position, list: &mut [ExtMove], mut idx: usiz
     }
 
     if us == WHITE {
-        generate_all::<White, QuietChecks>(pos, list, idx, !pos.pieces())
+        generate_all::<White, QuietChecks, true>(pos, list, idx, !pos.pieces())
     } else {
-        generate_all::<Black, QuietChecks>(pos, list, idx, !pos.pieces())
+        generate_all::<Black, QuietChecks, true>(pos, list, idx, !pos.pieces())
     }
 }
 
@@ -492,9 +492,9 @@ fn generate_evasions(pos: &Position, list: &mut [ExtMove], mut idx: usize) -> us
     let target = between_bb(check_sq, ksq) | check_sq;
 
     if us == WHITE {
-        generate_all::<White, Evasions>(pos, list, idx, target)
+        generate_all::<White, Evasions, false>(pos, list, idx, target)
     } else {
-        generate_all::<Black, Evasions>(pos, list, idx, target)
+        generate_all::<Black, Evasions, false>(pos, list, idx, target)
     }
 }
 
@@ -557,9 +557,9 @@ pub fn generate<T: GenType>(pos: &Position, list: &mut [ExtMove], idx: usize) ->
             };
 
             if us == WHITE {
-                generate_all::<White, T>(pos, list, idx, target)
+                generate_all::<White, T, false>(pos, list, idx, target)
             } else {
-                generate_all::<Black, T>(pos, list, idx, target)
+                generate_all::<Black, T, false>(pos, list, idx, target)
             }
         }
     }

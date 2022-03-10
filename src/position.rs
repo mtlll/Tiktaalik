@@ -1085,7 +1085,7 @@ impl Position {
 
             let mut rfrom = Square::A1;
             let mut rto = Square::A1;
-            self.do_castling::<True>(us, from, &mut to, &mut rfrom, &mut rto);
+            self.do_castling::<true>(us, from, &mut to, &mut rfrom, &mut rto);
 
             self.st_mut().psq += psqt::psq(captured, rto) - psqt::psq(captured, rfrom);
             k ^= zobrist::psq(captured, rfrom) ^ zobrist::psq(captured, rto);
@@ -1253,7 +1253,7 @@ impl Position {
         if m.move_type() == CASTLING {
             let mut rfrom = Square(0);
             let mut rto = Square(0);
-            self.do_castling::<False>(us, from, &mut to, &mut rfrom, &mut rto);
+            self.do_castling::<false>(us, from, &mut to, &mut rfrom, &mut rto);
         } else {
             // Put the piece back at the source square
             self.move_piece(pc, to, from);
@@ -1285,7 +1285,7 @@ impl Position {
 
     // do_castling() is a helper used to do/undo a castling move. This is
     // a bit tricky in Chess960 where from/to squares can overlap.
-    fn do_castling<Do: Bool>(
+    fn do_castling<const Do: bool>(
         &mut self,
         us: Color,
         from: Square,
@@ -1299,12 +1299,12 @@ impl Position {
         *to = relative_square(us, if king_side { Square::G1 } else { Square::C1 });
 
         // Remove both pieces first since squares could overlap in Chess960
-        self.remove_piece(Piece::make(us, KING), if Do::BOOL { from } else { *to });
-        self.remove_piece(Piece::make(us, ROOK), if Do::BOOL { *rfrom } else { *rto });
-        self.board[(if Do::BOOL { from } else { *to }).0 as usize] = NO_PIECE;
-        self.board[(if Do::BOOL { *rfrom } else { *rto }).0 as usize] = NO_PIECE;
-        self.put_piece(Piece::make(us, KING), if Do::BOOL { *to } else { from });
-        self.put_piece(Piece::make(us, ROOK), if Do::BOOL { *rto } else { *rfrom });
+        self.remove_piece(Piece::make(us, KING), if Do { from } else { *to });
+        self.remove_piece(Piece::make(us, ROOK), if Do { *rfrom } else { *rto });
+        self.board[(if Do { from } else { *to }).0 as usize] = NO_PIECE;
+        self.board[(if Do { *rfrom } else { *rto }).0 as usize] = NO_PIECE;
+        self.put_piece(Piece::make(us, KING), if Do { *to } else { from });
+        self.put_piece(Piece::make(us, ROOK), if Do { *rto } else { *rfrom });
     }
 
     // do(undo)_null_move() is used to do(undo) a "null move": it flips the

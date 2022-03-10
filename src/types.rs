@@ -976,18 +976,3 @@ impl std::ops::Mul<i32> for Score {
         Score::make(rhs * self.mg().0, rhs * self.eg().0)
     }
 }
-
-pub struct True {}
-pub struct False {}
-
-pub trait Bool {
-    const BOOL: bool;
-}
-
-impl Bool for True {
-    const BOOL: bool = true;
-}
-
-impl Bool for False {
-    const BOOL: bool = false;
-}
