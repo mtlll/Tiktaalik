@@ -1656,10 +1656,10 @@ fn probe_ab(pos: &mut Position, mut alpha: i32, beta: i32, success: &mut i32) ->
     }; 64];
 
     let end = if pos.checkers() == 0 {
-        let end = generate::<Captures>(pos, &mut list, 0);
+        let end = generate::<CAPTURES>(pos, &mut list, 0);
         add_underprom_caps(pos, &mut list, end)
     } else {
-        generate::<Evasions>(pos, &mut list, 0)
+        generate::<EVASIONS>(pos, &mut list, 0)
     };
 
     for &m in list[0..end].iter() {
@@ -1713,10 +1713,10 @@ pub fn probe_wdl(pos: &mut Position, success: &mut i32) -> i32 {
     }; 64];
 
     let mut end = if pos.checkers() == 0 {
-        let end = generate::<Captures>(pos, &mut list, 0);
+        let end = generate::<CAPTURES>(pos, &mut list, 0);
         add_underprom_caps(pos, &mut list, end)
     } else {
-        generate::<Evasions>(pos, &mut list, 0)
+        generate::<EVASIONS>(pos, &mut list, 0)
     };
 
     let mut best_cap = -3;
@@ -1786,7 +1786,7 @@ pub fn probe_wdl(pos: &mut Position, success: &mut i32) -> i32 {
             }
         }
         if pos.checkers() == 0 {
-            end = generate::<Quiets>(pos, &mut list, 0);
+            end = generate::<QUIETS>(pos, &mut list, 0);
             for &m in list[0..end].iter() {
                 if m.m.move_type() != ENPASSANT && pos.legal(m.m) {
                     return v;
@@ -1812,10 +1812,10 @@ fn probe_dtm_loss(pos: &mut Position, success: &mut i32) -> Value {
         value: 0,
     }; 64];
     let end = if pos.checkers() == 0 {
-        let end = generate::<Captures>(pos, &mut list, 0);
+        let end = generate::<CAPTURES>(pos, &mut list, 0);
         add_underprom_caps(pos, &mut list, end)
     } else {
-        generate::<Evasions>(pos, &mut list, 0)
+        generate::<EVASIONS>(pos, &mut list, 0)
     };
 
     for &m in list[0..end].iter() {
@@ -1841,7 +1841,7 @@ fn probe_dtm_loss(pos: &mut Position, success: &mut i32) -> Value {
 
     // If there are en-passant captures, the position without ep rights
     // may be a stalemate. If it is, we must avoid probing the DTM table.
-    if num_ep != 0 && MoveList::new::<Legal>(pos).len() == num_ep {
+    if num_ep != 0 && MoveList::new::<LEGAL>(pos).len() == num_ep {
         return best;
     }
 
@@ -1858,9 +1858,9 @@ fn probe_dtm_win(pos: &mut Position, success: &mut i32) -> Value {
         value: 0,
     }; 256];
     let end = if pos.checkers() != 0 {
-        generate::<Evasions>(pos, &mut list, 0)
+        generate::<EVASIONS>(pos, &mut list, 0)
     } else {
-        generate::<NonEvasions>(pos, &mut list, 0)
+        generate::<NON_EVASIONS>(pos, &mut list, 0)
     };
 
     // Perform a 1-ply search
@@ -1959,9 +1959,9 @@ pub fn probe_dtz(pos: &mut Position, success: &mut i32) -> i32 {
     // If winning, check for a winning pawn move.
     if wdl > 0 {
         end = if pos.checkers() == 0 {
-            generate::<NonEvasions>(pos, &mut list, 0)
+            generate::<NON_EVASIONS>(pos, &mut list, 0)
         } else {
-            generate::<Evasions>(pos, &mut list, 0)
+            generate::<EVASIONS>(pos, &mut list, 0)
         };
 
         for &m in list[0..end].iter() {
@@ -2003,9 +2003,9 @@ pub fn probe_dtz(pos: &mut Position, success: &mut i32) -> i32 {
         best = WDL_TO_DTZ[(wdl + 2) as usize];
         // If wdl < 0, we still have to generate all moves
         end = if pos.checkers() == 0 {
-            generate::<NonEvasions>(pos, &mut list, 0)
+            generate::<NON_EVASIONS>(pos, &mut list, 0)
         } else {
-            generate::<Evasions>(pos, &mut list, 0)
+            generate::<EVASIONS>(pos, &mut list, 0)
         };
     }
 
@@ -2080,7 +2080,7 @@ fn root_probe_dtz(pos: &mut Position, root_moves: &mut RootMoves) -> bool {
             }
         }
         // Make sure that a mating move gets value 1
-        if pos.checkers() != 0 && v == 2 && MoveList::new::<Legal>(pos).len() == 0 {
+        if pos.checkers() != 0 && v == 2 && MoveList::new::<LEGAL>(pos).len() == 0 {
             v = 1;
         }
 
@@ -2243,7 +2243,7 @@ pub fn expand_mate(pos: &mut Position, idx: usize) {
             v = if v > Value::ZERO { -v - 1 } else { -v + 1 };
             wdl = -wdl;
             let mut best_move = Move::NONE;
-            for m in MoveList::new::<Legal>(pos) {
+            for m in MoveList::new::<LEGAL>(pos) {
                 let gives_check = pos.gives_check(m);
                 pos.do_move(m, gives_check);
                 if wdl < 0 {

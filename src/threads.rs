@@ -329,7 +329,7 @@ pub fn start_thinking(
     }
 
     let mut root_moves = RootMoves::new();
-    for m in MoveList::new::<Legal>(pos) {
+    for m in MoveList::new::<LEGAL>(pos) {
         if searchmoves.is_empty() || searchmoves.iter().any(|&x| x == m) {
             root_moves.push(RootMove::new(m));
         }

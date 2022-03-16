@@ -318,7 +318,7 @@ pub fn move_str(m: Move, chess960: bool) -> String {
 pub fn to_move(pos: &Position, s: &str) -> Move {
     if s.len() == 5 {}
 
-    for m in MoveList::new::<Legal>(pos) {
+    for m in MoveList::new::<LEGAL>(pos) {
         if s == move_str(m, pos.is_chess960()) {
             return m;
         }

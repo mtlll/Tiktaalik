@@ -186,7 +186,7 @@ fn perft<const Root: bool>(pos: &mut Position, depth: Depth) -> u64 {
     let mut nodes = 0u64;
     let leaf = depth == 2 * ONE_PLY;
 
-    for m in MoveList::new::<Legal>(pos) {
+    for m in MoveList::new::<LEGAL>(pos) {
         let cnt;
         if Root && depth <= ONE_PLY {
             cnt = 1;
@@ -195,7 +195,7 @@ fn perft<const Root: bool>(pos: &mut Position, depth: Depth) -> u64 {
             let checks = pos.gives_check(m);
             pos.do_move(m, checks);
             cnt = if leaf {
-                MoveList::new::<Legal>(pos).len() as u64
+                MoveList::new::<LEGAL>(pos).len() as u64
             } else {
                 perft::<false>(pos, depth - ONE_PLY)
             };
@@ -2036,7 +2036,7 @@ fn extract_ponder_from_tt(pos: &mut Position) -> bool {
 
     if tt_hit {
         let m2 = tte.mov(); // Local copy to be SMP safe.
-        if MoveList::new::<Legal>(pos).contains(m2) {
+        if MoveList::new::<LEGAL>(pos).contains(m2) {
             pos.root_moves[0].pv.push(m2);
         }
     }

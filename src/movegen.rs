@@ -4,54 +4,14 @@ use bitboard::*;
 use position::Position;
 use types::*;
 
-const CAPTURES: i32 = 0;
-const QUIETS: i32 = 1;
-const QUIET_CHECKS: i32 = 2;
-const EVASIONS: i32 = 3;
-const NON_EVASIONS: i32 = 4;
-const LEGAL: i32 = 5;
+pub const CAPTURES: i32 = 0;
+pub const QUIETS: i32 = 1;
+pub const QUIET_CHECKS: i32 = 2;
+pub const EVASIONS: i32 = 3;
+pub const NON_EVASIONS: i32 = 4;
+pub const LEGAL: i32 = 5;
 
-pub struct Captures;
-pub struct Quiets;
-pub struct QuietChecks;
-pub struct Evasions;
-pub struct NonEvasions;
-pub struct Legal;
-
-pub trait GenType {
-    const Checks: bool;
-    const TYPE: i32;
-}
-
-impl GenType for Captures {
-    const Checks: bool = false;
-    const TYPE: i32 = CAPTURES;
-}
-
-impl GenType for Quiets {
-    const Checks: bool = false;
-    const TYPE: i32 = QUIETS;
-}
-
-impl GenType for QuietChecks {
-    const Checks: bool = true;
-    const TYPE: i32 = QUIET_CHECKS;
-}
-
-impl GenType for Evasions {
-    const Checks: bool = false;
-    const TYPE: i32 = EVASIONS;
-}
-
-impl GenType for NonEvasions {
-    const Checks: bool = false;
-    const TYPE: i32 = NON_EVASIONS;
-}
-
-impl GenType for Legal {
-    const Checks: bool = false;
-    const TYPE: i32 = LEGAL;
-}
+pub type GenType = i32;
 
 #[derive(Clone, Copy)]
 pub struct ExtMove {
@@ -69,7 +29,7 @@ pub struct MoveList {
 }
 
 impl MoveList {
-    pub fn new<T: GenType>(pos: &Position) -> MoveList {
+    pub fn new<const T: GenType>(pos: &Position) -> MoveList {
         let mut moves = MoveList {
             list: [ExtMove {
                 m: Move::NONE,
@@ -176,19 +136,19 @@ fn generate_castling<Cr: CastlingRightTrait, const Checks: bool, const Chess960:
     idx + 1
 }
 
-fn make_promotions<T: GenType>(
+fn make_promotions<const T: GenType>(
     list: &mut [ExtMove],
     mut idx: usize,
     to: Square,
     ksq: Square,
     direction: Direction,
 ) -> usize {
-    if T::TYPE == CAPTURES || T::TYPE == EVASIONS || T::TYPE == NON_EVASIONS {
+    if T == CAPTURES || T == EVASIONS || T == NON_EVASIONS {
         list[idx].m = Move::make_prom(to - direction, to, QUEEN);
         idx += 1;
     }
 
-    if T::TYPE == QUIETS || T::TYPE == EVASIONS || T::TYPE == NON_EVASIONS {
+    if T == QUIETS || T == EVASIONS || T == NON_EVASIONS {
         list[idx].m = Move::make_prom(to - direction, to, ROOK);
         list[idx + 1].m = Move::make_prom(to - direction, to, BISHOP);
         list[idx + 2].m = Move::make_prom(to - direction, to, KNIGHT);
@@ -197,7 +157,7 @@ fn make_promotions<T: GenType>(
 
     // Knight promotion is the only promotion that can give a direct check
     // that's not already included in the queen promotion.
-    if T::TYPE == QUIET_CHECKS && pseudo_attacks(KNIGHT, to) & ksq != 0 {
+    if T == QUIET_CHECKS && pseudo_attacks(KNIGHT, to) & ksq != 0 {
         list[idx].m = Move::make_prom(to - direction, to, KNIGHT);
         idx += 1;
     }
@@ -206,7 +166,7 @@ fn make_promotions<T: GenType>(
 }
 
 // template us
-fn generate_pawn_moves<Us: ColorTrait, T: GenType>(
+fn generate_pawn_moves<Us: ColorTrait, const T: GenType>(
     pos: &Position,
     list: &mut [ExtMove],
     mut idx: usize,
@@ -226,15 +186,15 @@ fn generate_pawn_moves<Us: ColorTrait, T: GenType>(
     let pawns_on_7 = pos.pieces_cp(us, PAWN) & trank_7bb;
     let pawns_not_on_7 = pos.pieces_cp(us, PAWN) & !trank_7bb;
 
-    let enemies = match T::TYPE {
+    let enemies = match T {
         EVASIONS => pos.pieces_c(them) & target,
         CAPTURES => target,
         _ => pos.pieces_c(them),
     };
 
     // Single and double pawn pushes, no promotions
-    if T::TYPE != CAPTURES {
-        empty_squares = if T::TYPE == QUIETS || T::TYPE == QUIET_CHECKS {
+    if T != CAPTURES {
+        empty_squares = if T == QUIETS || T == QUIET_CHECKS {
             target
         } else {
             !pos.pieces()
@@ -243,13 +203,13 @@ fn generate_pawn_moves<Us: ColorTrait, T: GenType>(
         let mut b1 = pawns_not_on_7.shift(up) & empty_squares;
         let mut b2 = (b1 & trank_3bb).shift(up) & empty_squares;
 
-        if T::TYPE == EVASIONS {
+        if T == EVASIONS {
             // Consider only blocking squares
             b1 &= target;
             b2 &= target;
         }
 
-        if T::TYPE == QUIET_CHECKS {
+        if T == QUIET_CHECKS {
             let ksq = pos.square(them, KING);
 
             b1 &= pos.attacks_from_pawn(ksq, them);
@@ -284,12 +244,12 @@ fn generate_pawn_moves<Us: ColorTrait, T: GenType>(
     }
 
     // Promotions and underpromotions
-    if pawns_on_7 != 0 && (T::TYPE != EVASIONS || target & trank_8bb != 0) {
-        if T::TYPE == CAPTURES {
+    if pawns_on_7 != 0 && (T != EVASIONS || target & trank_8bb != 0) {
+        if T == CAPTURES {
             empty_squares = !pos.pieces();
         }
 
-        if T::TYPE == EVASIONS {
+        if T == EVASIONS {
             empty_squares &= target;
         }
 
@@ -313,7 +273,7 @@ fn generate_pawn_moves<Us: ColorTrait, T: GenType>(
     }
 
     // Standard and en-passant captures
-    if T::TYPE == CAPTURES || T::TYPE == EVASIONS || T::TYPE == NON_EVASIONS {
+    if T == CAPTURES || T == EVASIONS || T == NON_EVASIONS {
         let b1 = pawns_not_on_7.shift(right) & enemies;
         let b2 = pawns_not_on_7.shift(left) & enemies;
 
@@ -334,7 +294,7 @@ fn generate_pawn_moves<Us: ColorTrait, T: GenType>(
             // piece is the double pushed pawn and so is in the target.
             // Otherwise this is a discovery check and we are forced to do
             // otherwise.
-            if T::TYPE == EVASIONS && target & (pos.ep_square() - up) == 0 {
+            if T == EVASIONS && target & (pos.ep_square() - up) == 0 {
                 return idx;
             }
 
@@ -389,7 +349,7 @@ fn generate_moves<const Pt: PieceType, const Checks: bool>(
     idx
 }
 
-fn generate_all<Us: ColorTrait, T: GenType, const Checks: bool>(
+fn generate_all<Us: ColorTrait, const T: GenType, const Checks: bool>(
     pos: &Position,
     list: &mut [ExtMove],
     mut idx: usize,
@@ -403,7 +363,7 @@ fn generate_all<Us: ColorTrait, T: GenType, const Checks: bool>(
     idx = generate_moves::<ROOK, Checks>(pos, list, idx, us, target);
     idx = generate_moves::<QUEEN, Checks>(pos, list, idx, us, target);
 
-    if T::TYPE != QUIET_CHECKS && T::TYPE != EVASIONS {
+    if T != QUIET_CHECKS && T != EVASIONS {
         let ksq = pos.square(us, KING);
         let b = pos.attacks_from(KING, ksq) & target;
         for to in b {
@@ -412,7 +372,7 @@ fn generate_all<Us: ColorTrait, T: GenType, const Checks: bool>(
         }
     }
 
-    if T::TYPE != CAPTURES && T::TYPE != EVASIONS && pos.can_castle(us) {
+    if T != CAPTURES && T != EVASIONS && pos.can_castle(us) {
         if pos.is_chess960() {
             idx = generate_castling::<Us::KingSide, Checks, true>(pos, list, idx, us);
             idx = generate_castling::<Us::QueenSide, Checks, true>(pos, list, idx, us);
@@ -453,9 +413,9 @@ pub fn generate_quiet_checks(pos: &Position, list: &mut [ExtMove], mut idx: usiz
     }
 
     if us == WHITE {
-        generate_all::<White, QuietChecks, true>(pos, list, idx, !pos.pieces())
+        generate_all::<White, QUIET_CHECKS, true>(pos, list, idx, !pos.pieces())
     } else {
-        generate_all::<Black, QuietChecks, true>(pos, list, idx, !pos.pieces())
+        generate_all::<Black, QUIET_CHECKS, true>(pos, list, idx, !pos.pieces())
     }
 }
 
@@ -492,9 +452,9 @@ fn generate_evasions(pos: &Position, list: &mut [ExtMove], mut idx: usize) -> us
     let target = between_bb(check_sq, ksq) | check_sq;
 
     if us == WHITE {
-        generate_all::<White, Evasions, false>(pos, list, idx, target)
+        generate_all::<White, EVASIONS, false>(pos, list, idx, target)
     } else {
-        generate_all::<Black, Evasions, false>(pos, list, idx, target)
+        generate_all::<Black, EVASIONS, false>(pos, list, idx, target)
     }
 }
 
@@ -505,9 +465,9 @@ fn generate_legal(pos: &Position, list: &mut [ExtMove], idx: usize) -> usize {
     let ksq = pos.square(us, KING);
 
     let pseudo = if pos.checkers() != 0 {
-        generate::<Evasions>(pos, list, idx)
+        generate::<EVASIONS>(pos, list, idx)
     } else {
-        generate::<NonEvasions>(pos, list, idx)
+        generate::<NON_EVASIONS>(pos, list, idx)
     };
 
     let mut legal = idx;
@@ -539,8 +499,8 @@ fn generate_legal(pos: &Position, list: &mut [ExtMove], idx: usize) -> usize {
 //
 // generate<Legal>() generates all the legal moves in the given position.
 
-pub fn generate<T: GenType>(pos: &Position, list: &mut [ExtMove], idx: usize) -> usize {
-    match T::TYPE {
+pub fn generate<const T: GenType>(pos: &Position, list: &mut [ExtMove], idx: usize) -> usize {
+    match T {
         QUIET_CHECKS => generate_quiet_checks(pos, list, idx),
         EVASIONS => generate_evasions(pos, list, idx),
         LEGAL => generate_legal(pos, list, idx),
@@ -549,7 +509,7 @@ pub fn generate<T: GenType>(pos: &Position, list: &mut [ExtMove], idx: usize) ->
 
             let us = pos.side_to_move();
 
-            let target = match T::TYPE {
+            let target = match T {
                 CAPTURES => pos.pieces_c(!us),
                 QUIETS => !pos.pieces(),
                 NON_EVASIONS => !pos.pieces_c(us),

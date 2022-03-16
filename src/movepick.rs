@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-
 use movegen::*;
 use position::Position;
 use search;
@@ -188,7 +186,7 @@ fn pick_best(list: &mut [ExtMove]) -> Move {
 // score_*() assigns a numerical value to each move in a list, to be used
 // for sorting.
 
-// Captures are ordered by Most Valuable Victim (MVV), preferring captures
+// CAPTURES are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history.
 fn score_captures(pos: &Position, list: &mut [ExtMove]) {
     for m in list.iter_mut() {
@@ -270,7 +268,7 @@ impl MovePicker {
                 }
 
                 CAPTURES_INIT => {
-                    self.end_moves = generate::<Captures>(pos, &mut self.list, 0);
+                    self.end_moves = generate::<CAPTURES>(pos, &mut self.list, 0);
                     score_captures(pos, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
@@ -329,7 +327,7 @@ impl MovePicker {
 
                 QUIET_INIT => {
                     self.cur = self.end_bad_captures;
-                    self.end_moves = generate::<Quiets>(pos, &mut self.list, self.cur);
+                    self.end_moves = generate::<QUIETS>(pos, &mut self.list, self.cur);
                     score_quiets(pos, self);
                     partial_insertion_sort(
                         &mut self.list[self.cur..self.end_moves],
@@ -367,7 +365,7 @@ impl MovePicker {
 
                 EVASIONS_INIT => {
                     self.cur = 0;
-                    self.end_moves = generate::<Evasions>(pos, &mut self.list, 0);
+                    self.end_moves = generate::<EVASIONS>(pos, &mut self.list, 0);
                     score_evasions(pos, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
@@ -434,7 +432,7 @@ impl MovePickerQ {
 
                 EVASIONS_INIT => {
                     self.cur = 0;
-                    self.end_moves = generate::<Evasions>(pos, &mut self.list, 0);
+                    self.end_moves = generate::<EVASIONS>(pos, &mut self.list, 0);
                     score_evasions(pos, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
@@ -452,7 +450,7 @@ impl MovePickerQ {
 
                 QCAPTURES_INIT => {
                     self.cur = 0;
-                    self.end_moves = generate::<Captures>(pos, &mut self.list, 0);
+                    self.end_moves = generate::<CAPTURES>(pos, &mut self.list, 0);
                     score_captures(pos, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
@@ -472,7 +470,7 @@ impl MovePickerQ {
                         break;
                     }
                     self.cur = 0;
-                    self.end_moves = generate::<QuietChecks>(pos, &mut self.list, 0);
+                    self.end_moves = generate::<QUIET_CHECKS>(pos, &mut self.list, 0);
                     self.stage += 1;
                 }
 
@@ -537,7 +535,7 @@ impl MovePickerPC {
 
                 PROBCUT_INIT => {
                     self.cur = 0;
-                    self.end_moves = generate::<Captures>(pos, &mut self.list, 0);
+                    self.end_moves = generate::<CAPTURES>(pos, &mut self.list, 0);
                     score_captures(pos, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }

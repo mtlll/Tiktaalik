@@ -894,7 +894,7 @@ impl Position {
 
         // Use a slower but simpler function for uncommon cases
         if m.move_type() != NORMAL {
-            return MoveList::new::<Legal>(self).contains(m);
+            return MoveList::new::<LEGAL>(self).contains(m);
         }
 
         // It is not a promotion, so promotion piece must be empty
@@ -1478,7 +1478,7 @@ impl Position {
 
     pub fn is_draw(&self, ply: i32) -> bool {
         if self.st().rule50 > 99
-            && (self.checkers() == 0 || MoveList::new::<Legal>(&self).len() != 0)
+            && (self.checkers() == 0 || MoveList::new::<LEGAL>(&self).len() != 0)
         {
             return true;
         }
