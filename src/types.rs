@@ -231,57 +231,23 @@ impl std::cmp::PartialEq<u32> for Bound {
         self.0 == *rhs
     }
 }
-
+/*
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PieceType(pub u32);
+*/
+pub type PieceType = u32;
+pub const NO_PIECE_TYPE: PieceType = 0;
 
-pub const NO_PIECE_TYPE: PieceType = PieceType(0);
+pub const PAWN: PieceType = 1;
+pub const KNIGHT: PieceType = 2;
+pub const BISHOP: PieceType = 3;
+pub const ROOK: PieceType = 4;
+pub const QUEEN: PieceType = 5;
+pub const KING: PieceType = 6;
 
-pub const PAWN: PieceType = PieceType(1);
-pub const KNIGHT: PieceType = PieceType(2);
-pub const BISHOP: PieceType = PieceType(3);
-pub const ROOK: PieceType = PieceType(4);
-pub const QUEEN: PieceType = PieceType(5);
-pub const KING: PieceType = PieceType(6);
+pub const QUEEN_DIAGONAL: PieceType = 7;
 
-pub const QUEEN_DIAGONAL: PieceType = PieceType(7);
-
-pub const ALL_PIECES: PieceType = PieceType(0);
-
-pub struct Pawn;
-pub struct Knight;
-pub struct Bishop;
-pub struct Rook;
-pub struct Queen;
-pub struct King;
-
-pub trait PieceTypeTrait {
-    const TYPE: PieceType;
-}
-
-impl PieceTypeTrait for Pawn {
-    const TYPE: PieceType = PAWN;
-}
-
-impl PieceTypeTrait for Knight {
-    const TYPE: PieceType = KNIGHT;
-}
-
-impl PieceTypeTrait for Bishop {
-    const TYPE: PieceType = BISHOP;
-}
-
-impl PieceTypeTrait for Rook {
-    const TYPE: PieceType = ROOK;
-}
-
-impl PieceTypeTrait for Queen {
-    const TYPE: PieceType = QUEEN;
-}
-
-impl PieceTypeTrait for King {
-    const TYPE: PieceType = KING;
-}
+pub const ALL_PIECES: PieceType = 0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Piece(pub u32);
@@ -304,7 +270,7 @@ pub const B_KING: Piece = Piece(14);
 
 impl Piece {
     pub fn piece_type(self) -> PieceType {
-        PieceType(self.0 & 7)
+        self.0 & 7
     }
 
     pub fn color(self) -> Color {
@@ -312,7 +278,7 @@ impl Piece {
     }
 
     pub fn make(c: Color, pt: PieceType) -> Piece {
-        Piece((c.0 << 3) + pt.0)
+        Piece((c.0 << 3) + pt)
     }
 }
 
@@ -704,7 +670,7 @@ impl Move {
     }
 
     pub fn promotion_type(self) -> PieceType {
-        PieceType(((self.0 >> 12) & 3) + KNIGHT.0)
+        ((self.0 >> 12) & 3) + KNIGHT
     }
 
     pub fn is_ok(self) -> bool {
@@ -716,7 +682,7 @@ impl Move {
     }
 
     pub fn make_prom(from: Square, to: Square, pt: PieceType) -> Move {
-        Move(PROMOTION.0 + ((pt.0 - KNIGHT.0) << 12) + (from.0 << 6) + to.0)
+        Move(PROMOTION.0 + ((pt - KNIGHT) << 12) + (from.0 << 6) + to.0)
     }
 
     pub fn make_special(mt: MoveType, from: Square, to: Square) -> Move {

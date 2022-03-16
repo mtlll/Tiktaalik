@@ -306,12 +306,7 @@ pub fn move_str(m: Move, chess960: bool) -> String {
     move_str.push_str(&square(to));
 
     if m.move_type() == PROMOTION {
-        move_str.push(
-            " pnbrqk"
-                .chars()
-                .nth(m.promotion_type().0 as usize)
-                .unwrap(),
-        );
+        move_str.push(" pnbrqk".chars().nth(m.promotion_type() as usize).unwrap());
     }
 
     move_str

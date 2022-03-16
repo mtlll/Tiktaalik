@@ -516,7 +516,7 @@ pub fn aligned(s1: Square, s2: Square, s3: Square) -> bool {
 }
 
 pub fn pseudo_attacks(pt: PieceType, s: Square) -> Bitboard {
-    unsafe { PSEUDO_ATTACKS[pt.0 as usize][s.0 as usize] }
+    unsafe { PSEUDO_ATTACKS[pt as usize][s.0 as usize] }
 }
 
 pub fn pawn_attacks(c: Color, s: Square) -> Bitboard {
@@ -642,7 +642,7 @@ pub fn init() {
                             if pt == PAWN {
                                 PAWN_ATTACKS[c.0 as usize][s.0 as usize] |= to;
                             } else {
-                                PSEUDO_ATTACKS[pt.0 as usize][s.0 as usize] |= to;
+                                PSEUDO_ATTACKS[pt as usize][s.0 as usize] |= to;
                             }
                         }
                     }
@@ -663,14 +663,14 @@ pub fn init() {
         let b_att = attacks_bb(BISHOP, s1, Bitboard(0));
         let r_att = attacks_bb(ROOK, s1, Bitboard(0));
         unsafe {
-            PSEUDO_ATTACKS[BISHOP.0 as usize][s1.0 as usize] = b_att;
-            PSEUDO_ATTACKS[ROOK.0 as usize][s1.0 as usize] = r_att;
-            PSEUDO_ATTACKS[QUEEN.0 as usize][s1.0 as usize] = b_att | r_att;
+            PSEUDO_ATTACKS[BISHOP as usize][s1.0 as usize] = b_att;
+            PSEUDO_ATTACKS[ROOK as usize][s1.0 as usize] = r_att;
+            PSEUDO_ATTACKS[QUEEN as usize][s1.0 as usize] = b_att | r_att;
         }
         for &pt in [BISHOP, ROOK].iter() {
             for s2 in ALL_SQUARES {
                 unsafe {
-                    if PSEUDO_ATTACKS[pt.0 as usize][s1.0 as usize] & s2 == 0 {
+                    if PSEUDO_ATTACKS[pt as usize][s1.0 as usize] & s2 == 0 {
                         continue;
                     }
                     LINE_BB[s1.0 as usize][s2.0 as usize] = (attacks_bb(pt, s1, Bitboard(0))

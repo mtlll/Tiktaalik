@@ -259,11 +259,11 @@ impl Position {
     }
 
     pub fn pieces(&self) -> Bitboard {
-        self.by_type_bb[ALL_PIECES.0 as usize]
+        self.by_type_bb[ALL_PIECES as usize]
     }
 
     pub fn pieces_p(&self, pt: PieceType) -> Bitboard {
-        self.by_type_bb[pt.0 as usize]
+        self.by_type_bb[pt as usize]
     }
 
     pub fn pieces_pp(&self, pt1: PieceType, pt2: PieceType) -> Bitboard {
@@ -345,7 +345,7 @@ impl Position {
     }
 
     pub fn attackers_to(&self, s: Square) -> Bitboard {
-        self.attackers_to_occ(s, self.by_type_bb[ALL_PIECES.0 as usize])
+        self.attackers_to_occ(s, self.by_type_bb[ALL_PIECES as usize])
     }
 
     pub fn checkers(&self) -> Bitboard {
@@ -361,7 +361,7 @@ impl Position {
     }
 
     pub fn check_squares(&self, pt: PieceType) -> Bitboard {
-        self.st().check_squares[pt.0 as usize]
+        self.st().check_squares[pt as usize]
     }
 
     pub fn pawn_passed(&self, c: Color, s: Square) -> bool {
@@ -658,14 +658,14 @@ impl Position {
 
         let ksq = self.square(!self.side_to_move(), KING);
 
-        self.st_mut().check_squares[PAWN.0 as usize] =
+        self.st_mut().check_squares[PAWN as usize] =
             self.attacks_from_pawn(ksq, !self.side_to_move);
-        self.st_mut().check_squares[KNIGHT.0 as usize] = self.attacks_from(KNIGHT, ksq);
-        self.st_mut().check_squares[BISHOP.0 as usize] = self.attacks_from(BISHOP, ksq);
-        self.st_mut().check_squares[ROOK.0 as usize] = self.attacks_from(ROOK, ksq);
-        self.st_mut().check_squares[QUEEN.0 as usize] =
-            self.st().check_squares[BISHOP.0 as usize] | self.st().check_squares[ROOK.0 as usize];
-        self.st_mut().check_squares[KING.0 as usize] = Bitboard(0);
+        self.st_mut().check_squares[KNIGHT as usize] = self.attacks_from(KNIGHT, ksq);
+        self.st_mut().check_squares[BISHOP as usize] = self.attacks_from(BISHOP, ksq);
+        self.st_mut().check_squares[ROOK as usize] = self.attacks_from(ROOK, ksq);
+        self.st_mut().check_squares[QUEEN as usize] =
+            self.st().check_squares[BISHOP as usize] | self.st().check_squares[ROOK as usize];
+        self.st_mut().check_squares[KING as usize] = Bitboard(0);
     }
 
     // set_state() computes the hash keys of the position, and other data
@@ -712,14 +712,14 @@ impl Position {
 
         for c in 0..2 {
             for pt in 2..6 {
-                let pc = Piece::make(Color(c), PieceType(pt));
-                let tmp = self.count(Color(c), PieceType(pt)) * piece_value(MG, pc);
+                let pc = Piece::make(Color(c), pt);
+                let tmp = self.count(Color(c), pt) * piece_value(MG, pc);
                 self.st_mut().non_pawn_material[c as usize] += tmp;
             }
 
             for pt in 1..7 {
-                let pc = Piece::make(Color(c), PieceType(pt));
-                for cnt in 0..self.count(Color(c), PieceType(pt)) {
+                let pc = Piece::make(Color(c), pt);
+                for cnt in 0..self.count(Color(c), pt) {
                     self.st_mut().material_key ^= zobrist::material(pc, cnt);
                 }
             }
@@ -972,7 +972,7 @@ impl Position {
         let to = m.to();
 
         // Is there a direct check?
-        if self.st().check_squares[self.piece_on(from).piece_type().0 as usize] & to != 0 {
+        if self.st().check_squares[self.piece_on(from).piece_type() as usize] & to != 0 {
             return true;
         }
 
@@ -1540,8 +1540,8 @@ impl Position {
 
     fn put_piece(&mut self, pc: Piece, s: Square) {
         self.board[s.0 as usize] = pc;
-        self.by_type_bb[ALL_PIECES.0 as usize] |= s;
-        self.by_type_bb[pc.piece_type().0 as usize] |= s;
+        self.by_type_bb[ALL_PIECES as usize] |= s;
+        self.by_type_bb[pc.piece_type() as usize] |= s;
         self.by_color_bb[pc.color().0 as usize] |= s;
         self.index[s.0 as usize] = self.piece_count[pc.0 as usize];
         self.piece_count[pc.0 as usize] += 1;
@@ -1550,8 +1550,8 @@ impl Position {
     }
 
     fn remove_piece(&mut self, pc: Piece, s: Square) {
-        self.by_type_bb[ALL_PIECES.0 as usize] ^= s;
-        self.by_type_bb[pc.piece_type().0 as usize] ^= s;
+        self.by_type_bb[ALL_PIECES as usize] ^= s;
+        self.by_type_bb[pc.piece_type() as usize] ^= s;
         self.by_color_bb[pc.color().0 as usize] ^= s;
         self.piece_count[pc.0 as usize] -= 1;
         let last_square = self.piece_list[pc.0 as usize][self.piece_count[pc.0 as usize] as usize];
@@ -1563,8 +1563,8 @@ impl Position {
 
     fn move_piece(&mut self, pc: Piece, from: Square, to: Square) {
         let from_to_bb = from.bb() ^ to.bb();
-        self.by_type_bb[ALL_PIECES.0 as usize] ^= from_to_bb;
-        self.by_type_bb[pc.piece_type().0 as usize] ^= from_to_bb;
+        self.by_type_bb[ALL_PIECES as usize] ^= from_to_bb;
+        self.by_type_bb[pc.piece_type() as usize] ^= from_to_bb;
         self.by_color_bb[pc.color().0 as usize] ^= from_to_bb;
         self.board[from.0 as usize] = NO_PIECE;
         self.board[to.0 as usize] = pc;
@@ -1604,7 +1604,7 @@ impl Position {
 
         for p1 in 1..6 {
             for p2 in 1..6 {
-                if p1 != p2 && self.pieces_p(PieceType(p1)) & self.pieces_p(PieceType(p2)) != 0 {
+                if p1 != p2 && self.pieces_p(p1) & self.pieces_p(p2) != 0 {
                     panic!("pos_is_ok: Bitboards");
                 }
             }

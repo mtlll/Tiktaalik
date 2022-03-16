@@ -375,12 +375,12 @@ fn initialize<Us: ColorTrait>(pos: &Position, ei: &mut EvalInfo) {
 
     // Initialize the attack bitboards with the king and pawn information
     let b = pos.attacks_from(KING, pos.square(us, KING));
-    ei.attacked_by[us.0 as usize][KING.0 as usize] = b;
-    ei.attacked_by[us.0 as usize][PAWN.0 as usize] = ei.pe.pawn_attacks(us);
+    ei.attacked_by[us.0 as usize][KING as usize] = b;
+    ei.attacked_by[us.0 as usize][PAWN as usize] = ei.pe.pawn_attacks(us);
 
-    ei.attacked_by2[us.0 as usize] = b & ei.attacked_by[us.0 as usize][PAWN.0 as usize];
-    ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize] =
-        b | ei.attacked_by[us.0 as usize][PAWN.0 as usize];
+    ei.attacked_by2[us.0 as usize] = b & ei.attacked_by[us.0 as usize][PAWN as usize];
+    ei.attacked_by[us.0 as usize][ALL_PIECES as usize] =
+        b | ei.attacked_by[us.0 as usize][PAWN as usize];
 
     // Init out king safety tables only if we are going to use them
     if pos.non_pawn_material_c(them) >= RookValueMg + KnightValueMg {
@@ -401,9 +401,12 @@ fn initialize<Us: ColorTrait>(pos: &Position, ei: &mut EvalInfo) {
 // evaluate_pieces() assigned bonuses and penalties to the pieces of a given
 // color and type.
 
-fn evaluate_pieces<Us: ColorTrait, Pt: PieceTypeTrait>(pos: &Position, ei: &mut EvalInfo) -> Score {
+fn evaluate_pieces<Us: ColorTrait, const pt: PieceType>(
+    pos: &Position,
+    ei: &mut EvalInfo,
+) -> Score {
     let us = Us::COLOR;
-    let pt = Pt::TYPE;
+    // let pt = Pt::TYPE;
     let them = if us == WHITE { BLACK } else { WHITE };
     let outpost_ranks = if us == WHITE {
         RANK4_BB | RANK5_BB | RANK6_BB
@@ -413,10 +416,10 @@ fn evaluate_pieces<Us: ColorTrait, Pt: PieceTypeTrait>(pos: &Position, ei: &mut 
 
     let mut score = Score::ZERO;
 
-    ei.attacked_by[us.0 as usize][pt.0 as usize] = Bitboard(0);
+    ei.attacked_by[us.0 as usize][pt as usize] = Bitboard(0);
 
     if pt == QUEEN {
-        ei.attacked_by[us.0 as usize][QUEEN_DIAGONAL.0 as usize] = Bitboard(0);
+        ei.attacked_by[us.0 as usize][QUEEN_DIAGONAL as usize] = Bitboard(0);
     }
 
     for s in pos.square_list(us, pt) {
@@ -435,43 +438,42 @@ fn evaluate_pieces<Us: ColorTrait, Pt: PieceTypeTrait>(pos: &Position, ei: &mut 
             b &= line_bb(pos.square(us, KING), s);
         }
 
-        ei.attacked_by2[us.0 as usize] |= ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize] & b;
-        ei.attacked_by[us.0 as usize][pt.0 as usize] |= b;
-        ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize] |=
-            ei.attacked_by[us.0 as usize][pt.0 as usize];
+        ei.attacked_by2[us.0 as usize] |= ei.attacked_by[us.0 as usize][ALL_PIECES as usize] & b;
+        ei.attacked_by[us.0 as usize][pt as usize] |= b;
+        ei.attacked_by[us.0 as usize][ALL_PIECES as usize] |=
+            ei.attacked_by[us.0 as usize][pt as usize];
 
         if pt == QUEEN {
-            ei.attacked_by[us.0 as usize][QUEEN_DIAGONAL.0 as usize] |=
-                b & pseudo_attacks(BISHOP, s);
+            ei.attacked_by[us.0 as usize][QUEEN_DIAGONAL as usize] |= b & pseudo_attacks(BISHOP, s);
         }
 
         if b & ei.king_ring[them.0 as usize] != 0 {
             ei.king_attackers_count[us.0 as usize] += 1;
-            ei.king_attackers_weight[us.0 as usize] += KING_ATTACK_WEIGHTS[pt.0 as usize];
+            ei.king_attackers_weight[us.0 as usize] += KING_ATTACK_WEIGHTS[pt as usize];
             ei.king_adjacent_zone_attacks_count[us.0 as usize] +=
-                popcount(b & ei.attacked_by[them.0 as usize][KING.0 as usize]) as i32;
+                popcount(b & ei.attacked_by[them.0 as usize][KING as usize]) as i32;
         }
 
         let mob = popcount(b & ei.mobility_area[us.0 as usize]);
 
-        ei.mobility[us.0 as usize] += MOBILITY_BONUS[(pt.0 - 2) as usize][mob as usize];
+        ei.mobility[us.0 as usize] += MOBILITY_BONUS[(pt - 2) as usize][mob as usize];
 
         // Bonus for this piece as king protector
         score +=
-            KING_PROTECTOR[(pt.0 - 2) as usize] * Square::distance(s, pos.square(us, KING)) as i32;
+            KING_PROTECTOR[(pt - 2) as usize] * Square::distance(s, pos.square(us, KING)) as i32;
 
         if pt == BISHOP || pt == KNIGHT {
             // Bonus for outpost squares
             let mut bb = outpost_ranks & !ei.pe.pawn_attacks_span(them);
             if bb & s != 0 {
                 score += OUTPOST[(pt == BISHOP) as usize]
-                    [(ei.attacked_by[us.0 as usize][PAWN.0 as usize] & s != 0) as usize]
+                    [(ei.attacked_by[us.0 as usize][PAWN as usize] & s != 0) as usize]
                     * 2;
             } else {
                 bb &= b & !pos.pieces_c(us);
                 if bb != 0 {
                     score += OUTPOST[(pt == BISHOP) as usize]
-                        [((ei.attacked_by[us.0 as usize][PAWN.0 as usize] & bb) != 0) as usize];
+                        [((ei.attacked_by[us.0 as usize][PAWN as usize] & bb) != 0) as usize];
                 }
             }
 
@@ -567,17 +569,17 @@ fn evaluate_king<Us: ColorTrait>(pos: &Position, ei: &mut EvalInfo) -> Score {
     if ei.king_attackers_count[them.0 as usize] > (1 - popcount(pos.pieces_cp(them, QUEEN)) as i32)
     {
         // Attacked squares defended at most once by our queen or king
-        let weak = ei.attacked_by[them.0 as usize][ALL_PIECES.0 as usize]
+        let weak = ei.attacked_by[them.0 as usize][ALL_PIECES as usize]
             & !ei.attacked_by2[us.0 as usize]
-            & (ei.attacked_by[us.0 as usize][KING.0 as usize]
-                | ei.attacked_by[us.0 as usize][QUEEN.0 as usize]
-                | !ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize]);
+            & (ei.attacked_by[us.0 as usize][KING as usize]
+                | ei.attacked_by[us.0 as usize][QUEEN as usize]
+                | !ei.attacked_by[us.0 as usize][ALL_PIECES as usize]);
 
         let mut king_danger = 0;
         let mut unsafe_checks = Bitboard(0);
         // Analyse the safe enemy's checks which are possible on next move
         let safe = !pos.pieces_c(them)
-            & (!ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize]
+            & (!ei.attacked_by[us.0 as usize][ALL_PIECES as usize]
                 | (weak & ei.attacked_by2[them.0 as usize]));
 
         let mut b1 = attacks_bb(ROOK, ksq, pos.pieces() ^ pos.pieces_cp(us, QUEEN));
@@ -585,16 +587,16 @@ fn evaluate_king<Us: ColorTrait>(pos: &Position, ei: &mut EvalInfo) -> Score {
 
         // Enemy queen safe checks
         if (b1 | b2)
-            & ei.attacked_by[them.0 as usize][QUEEN.0 as usize]
+            & ei.attacked_by[them.0 as usize][QUEEN as usize]
             & safe
-            & !ei.attacked_by[us.0 as usize][QUEEN.0 as usize]
+            & !ei.attacked_by[us.0 as usize][QUEEN as usize]
             != 0
         {
             king_danger += QUEEN_SAFE_CHECK;
         }
 
-        b1 &= ei.attacked_by[them.0 as usize][ROOK.0 as usize];
-        b2 &= ei.attacked_by[them.0 as usize][BISHOP.0 as usize];
+        b1 &= ei.attacked_by[them.0 as usize][ROOK as usize];
+        b2 &= ei.attacked_by[them.0 as usize][BISHOP as usize];
 
         // Enemy rooks checks
         if b1 & safe != 0 {
@@ -611,7 +613,7 @@ fn evaluate_king<Us: ColorTrait>(pos: &Position, ei: &mut EvalInfo) -> Score {
         }
 
         // Enemy knights checks
-        let b = pos.attacks_from(KNIGHT, ksq) & ei.attacked_by[them.0 as usize][KNIGHT.0 as usize];
+        let b = pos.attacks_from(KNIGHT, ksq) & ei.attacked_by[them.0 as usize][KNIGHT as usize];
         if b & safe != 0 {
             king_danger += KNIGHT_SAFE_CHECK;
         } else {
@@ -647,7 +649,7 @@ fn evaluate_king<Us: ColorTrait>(pos: &Position, ei: &mut EvalInfo) -> Score {
     // flank
     let kf = ksq.file();
     let mut b =
-        ei.attacked_by[them.0 as usize][ALL_PIECES.0 as usize] & KING_FLANK[kf as usize] & camp;
+        ei.attacked_by[them.0 as usize][ALL_PIECES as usize] & KING_FLANK[kf as usize] & camp;
 
     debug_assert!(((if us == WHITE { b << 4 } else { b >> 4 }) & b) == 0);
     debug_assert!(popcount(if us == WHITE { b << 4 } else { b >> 4 }) == popcount(b));
@@ -655,7 +657,7 @@ fn evaluate_king<Us: ColorTrait>(pos: &Position, ei: &mut EvalInfo) -> Score {
     // Second, add the squares which are attacked twice in that flank and
     // which are not defended by our pawns.
     b = (if us == WHITE { b << 4 } else { b >> 4 })
-        | (b & ei.attacked_by2[them.0 as usize] & !ei.attacked_by[us.0 as usize][PAWN.0 as usize]);
+        | (b & ei.attacked_by2[them.0 as usize] & !ei.attacked_by[us.0 as usize][PAWN as usize]);
 
     score -= CLOSE_ENEMIES * (popcount(b) as i32);
 
@@ -679,12 +681,12 @@ fn evaluate_threats<Us: ColorTrait>(pos: &Position, ei: &EvalInfo) -> Score {
 
     // Non-pawn enemies attacked by a pawn
     let weak = (pos.pieces_c(them) ^ pos.pieces_cp(them, PAWN))
-        & ei.attacked_by[us.0 as usize][PAWN.0 as usize];
+        & ei.attacked_by[us.0 as usize][PAWN as usize];
 
     if weak != 0 {
         let b = pos.pieces_cp(us, PAWN)
-            & (!ei.attacked_by[them.0 as usize][ALL_PIECES.0 as usize]
-                | ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize]);
+            & (!ei.attacked_by[them.0 as usize][ALL_PIECES as usize]
+                | ei.attacked_by[us.0 as usize][ALL_PIECES as usize]);
 
         let safe_threats = (b.shift(right) | b.shift(left)) & weak;
 
@@ -694,7 +696,7 @@ fn evaluate_threats<Us: ColorTrait>(pos: &Position, ei: &EvalInfo) -> Score {
     // Squares strongly protected by the opponent, either because they attack
     // the square with a pawn or because they attack the square twice and
     // we don't.
-    let strongly_protected = ei.attacked_by[them.0 as usize][PAWN.0 as usize]
+    let strongly_protected = ei.attacked_by[them.0 as usize][PAWN as usize]
         | (ei.attacked_by2[them.0 as usize] & !ei.attacked_by2[us.0 as usize]);
 
     // Non-pawn enemies, strongly protected
@@ -703,33 +705,32 @@ fn evaluate_threats<Us: ColorTrait>(pos: &Position, ei: &EvalInfo) -> Score {
     // Enemies not strongly protected and under our attack
     let weak = pos.pieces_c(them)
         & !strongly_protected
-        & ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize];
+        & ei.attacked_by[us.0 as usize][ALL_PIECES as usize];
 
     // Add a bonus according to the kind of attacking pieces
     if defended | weak != 0 {
         let b = (defended | weak)
-            & (ei.attacked_by[us.0 as usize][KNIGHT.0 as usize]
-                | ei.attacked_by[us.0 as usize][BISHOP.0 as usize]);
+            & (ei.attacked_by[us.0 as usize][KNIGHT as usize]
+                | ei.attacked_by[us.0 as usize][BISHOP as usize]);
         for s in b {
-            score += THREAT_BY_MINOR[pos.piece_on(s).piece_type().0 as usize];
+            score += THREAT_BY_MINOR[pos.piece_on(s).piece_type() as usize];
             if pos.piece_on(s).piece_type() != PAWN {
                 score += THREAT_BY_RANK * (s.relative_rank(them) as i32);
             }
         }
 
-        let b =
-            (pos.pieces_cp(them, QUEEN) | weak) & ei.attacked_by[us.0 as usize][ROOK.0 as usize];
+        let b = (pos.pieces_cp(them, QUEEN) | weak) & ei.attacked_by[us.0 as usize][ROOK as usize];
         for s in b {
-            score += THREAT_BY_ROOK[pos.piece_on(s).piece_type().0 as usize];
+            score += THREAT_BY_ROOK[pos.piece_on(s).piece_type() as usize];
             if pos.piece_on(s).piece_type() != PAWN {
                 score += THREAT_BY_RANK * (s.relative_rank(them) as i32);
             }
         }
 
         score += HANGING
-            * (popcount(weak & !ei.attacked_by[them.0 as usize][ALL_PIECES.0 as usize]) as i32);
+            * (popcount(weak & !ei.attacked_by[them.0 as usize][ALL_PIECES as usize]) as i32);
 
-        let b = weak & ei.attacked_by[us.0 as usize][KING.0 as usize];
+        let b = weak & ei.attacked_by[us.0 as usize][KING as usize];
         if b != 0 {
             score += THREAT_BY_KING[more_than_one(b) as usize];
         }
@@ -745,25 +746,25 @@ fn evaluate_threats<Us: ColorTrait>(pos: &Position, ei: &EvalInfo) -> Score {
     b |= (b & trank3bb).shift(up) & !pos.pieces();
 
     // Keep only the squares which are not completely unsafe
-    b &= !ei.attacked_by[them.0 as usize][PAWN.0 as usize]
-        & (ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize]
-            | !ei.attacked_by[them.0 as usize][ALL_PIECES.0 as usize]);
+    b &= !ei.attacked_by[them.0 as usize][PAWN as usize]
+        & (ei.attacked_by[us.0 as usize][ALL_PIECES as usize]
+            | !ei.attacked_by[them.0 as usize][ALL_PIECES as usize]);
 
     // Add a bonus for each new pawn threats from those squares
     b = (b.shift(left) | b.shift(right))
         & pos.pieces_c(them)
-        & !ei.attacked_by[us.0 as usize][PAWN.0 as usize];
+        & !ei.attacked_by[us.0 as usize][PAWN as usize];
 
     score += THREAT_BY_PAWN_PUSH * (popcount(b) as i32);
 
     // Add a bonus for safe slider attack threats on opponent queen
     let safe_threats =
         !pos.pieces_c(us) & !ei.attacked_by2[them.0 as usize] & ei.attacked_by2[us.0 as usize];
-    b = (ei.attacked_by[us.0 as usize][BISHOP.0 as usize]
-        & ei.attacked_by[them.0 as usize][QUEEN_DIAGONAL.0 as usize])
-        | (ei.attacked_by[us.0 as usize][ROOK.0 as usize]
-            & ei.attacked_by[them.0 as usize][QUEEN.0 as usize]
-            & !ei.attacked_by[them.0 as usize][QUEEN_DIAGONAL.0 as usize]);
+    b = (ei.attacked_by[us.0 as usize][BISHOP as usize]
+        & ei.attacked_by[them.0 as usize][QUEEN_DIAGONAL as usize])
+        | (ei.attacked_by[us.0 as usize][ROOK as usize]
+            & ei.attacked_by[them.0 as usize][QUEEN as usize]
+            & !ei.attacked_by[them.0 as usize][QUEEN_DIAGONAL as usize]);
 
     score += THREAT_BY_ATTACK_ON_QUEEN * popcount(b & safe_threats) as i32;
 
@@ -789,7 +790,7 @@ fn evaluate_passed_pawns<Us: ColorTrait>(pos: &Position, ei: &EvalInfo) -> Score
         debug_assert!(pos.pieces_cp(them, PAWN) & forward_file_bb(us, s + up) == 0);
 
         let bb = forward_file_bb(us, s)
-            & (ei.attacked_by[them.0 as usize][ALL_PIECES.0 as usize] | pos.pieces_c(them));
+            & (ei.attacked_by[them.0 as usize][ALL_PIECES as usize] | pos.pieces_c(them));
         score -= HINDER_PASSED_PAWN * popcount(bb) as i32;
 
         let r = s.relative_rank(us);
@@ -826,12 +827,12 @@ fn evaluate_passed_pawns<Us: ColorTrait>(pos: &Position, ei: &EvalInfo) -> Score
                     & pos.attacks_from(ROOK, s);
 
                 if pos.pieces_c(us) & bb == 0 {
-                    defended_squares &= ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize];
+                    defended_squares &= ei.attacked_by[us.0 as usize][ALL_PIECES as usize];
                 }
 
                 if pos.pieces_c(them) & bb == 0 {
                     unsafe_squares &=
-                        ei.attacked_by[them.0 as usize][ALL_PIECES.0 as usize] | pos.pieces_c(them);
+                        ei.attacked_by[them.0 as usize][ALL_PIECES as usize] | pos.pieces_c(them);
                 }
 
                 // If there aren't any enemy attacks, assign a big bonus.
@@ -896,9 +897,9 @@ fn evaluate_space<Us: ColorTrait>(pos: &Position, ei: &EvalInfo) -> Score {
     // or if it is undefended and attacked by an enemy piece.
     let safe = space_mask
         & !pos.pieces_cp(us, PAWN)
-        & !ei.attacked_by[them.0 as usize][PAWN.0 as usize]
-        & (ei.attacked_by[us.0 as usize][ALL_PIECES.0 as usize]
-            | !ei.attacked_by[them.0 as usize][ALL_PIECES.0 as usize]);
+        & !ei.attacked_by[them.0 as usize][PAWN as usize]
+        & (ei.attacked_by[us.0 as usize][ALL_PIECES as usize]
+            | !ei.attacked_by[them.0 as usize][ALL_PIECES as usize]);
 
     // Find all squares which are at most three squares behind some friendly
     // pawn.
@@ -1030,14 +1031,14 @@ pub fn evaluate(pos: &Position) -> Value {
     initialize::<White>(pos, &mut ei);
     initialize::<Black>(pos, &mut ei);
 
-    score += evaluate_pieces::<White, Knight>(pos, &mut ei)
-        - evaluate_pieces::<Black, Knight>(pos, &mut ei);
-    score += evaluate_pieces::<White, Bishop>(pos, &mut ei)
-        - evaluate_pieces::<Black, Bishop>(pos, &mut ei);
+    score += evaluate_pieces::<White, KNIGHT>(pos, &mut ei)
+        - evaluate_pieces::<Black, KNIGHT>(pos, &mut ei);
+    score += evaluate_pieces::<White, BISHOP>(pos, &mut ei)
+        - evaluate_pieces::<Black, BISHOP>(pos, &mut ei);
     score +=
-        evaluate_pieces::<White, Rook>(pos, &mut ei) - evaluate_pieces::<Black, Rook>(pos, &mut ei);
-    score += evaluate_pieces::<White, Queen>(pos, &mut ei)
-        - evaluate_pieces::<Black, Queen>(pos, &mut ei);
+        evaluate_pieces::<White, ROOK>(pos, &mut ei) - evaluate_pieces::<Black, ROOK>(pos, &mut ei);
+    score += evaluate_pieces::<White, QUEEN>(pos, &mut ei)
+        - evaluate_pieces::<Black, QUEEN>(pos, &mut ei);
 
     score += ei.mobility[WHITE.0 as usize] - ei.mobility[BLACK.0 as usize];
 

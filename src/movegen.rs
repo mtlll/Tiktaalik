@@ -352,19 +352,19 @@ fn generate_pawn_moves<Us: ColorTrait, T: GenType>(
     idx
 }
 
-fn generate_moves<Pt: PieceTypeTrait, const Checks: bool>(
+fn generate_moves<const Pt: PieceType, const Checks: bool>(
     pos: &Position,
     list: &mut [ExtMove],
     mut idx: usize,
     us: Color,
     target: Bitboard,
 ) -> usize {
-    debug_assert!(Pt::TYPE != KING && Pt::TYPE != PAWN);
+    debug_assert!(Pt != KING && Pt != PAWN);
 
-    for from in pos.square_list(us, Pt::TYPE) {
+    for from in pos.square_list(us, Pt) {
         if Checks {
-            if (Pt::TYPE == BISHOP || Pt::TYPE == ROOK || Pt::TYPE == QUEEN)
-                && pseudo_attacks(Pt::TYPE, from) & target & pos.check_squares(Pt::TYPE) == 0
+            if (Pt == BISHOP || Pt == ROOK || Pt == QUEEN)
+                && pseudo_attacks(Pt, from) & target & pos.check_squares(Pt) == 0
             {
                 continue;
             }
@@ -374,10 +374,10 @@ fn generate_moves<Pt: PieceTypeTrait, const Checks: bool>(
             }
         }
 
-        let mut b = pos.attacks_from(Pt::TYPE, from) & target;
+        let mut b = pos.attacks_from(Pt, from) & target;
 
         if Checks {
-            b &= pos.check_squares(Pt::TYPE);
+            b &= pos.check_squares(Pt);
         }
 
         for to in b {
@@ -398,10 +398,10 @@ fn generate_all<Us: ColorTrait, T: GenType, const Checks: bool>(
     let us = Us::COLOR;
 
     idx = generate_pawn_moves::<Us, T>(pos, list, idx, target);
-    idx = generate_moves::<Knight, Checks>(pos, list, idx, us, target);
-    idx = generate_moves::<Bishop, Checks>(pos, list, idx, us, target);
-    idx = generate_moves::<Rook, Checks>(pos, list, idx, us, target);
-    idx = generate_moves::<Queen, Checks>(pos, list, idx, us, target);
+    idx = generate_moves::<KNIGHT, Checks>(pos, list, idx, us, target);
+    idx = generate_moves::<BISHOP, Checks>(pos, list, idx, us, target);
+    idx = generate_moves::<ROOK, Checks>(pos, list, idx, us, target);
+    idx = generate_moves::<QUEEN, Checks>(pos, list, idx, us, target);
 
     if T::TYPE != QUIET_CHECKS && T::TYPE != EVASIONS {
         let ksq = pos.square(us, KING);

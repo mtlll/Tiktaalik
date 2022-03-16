@@ -46,12 +46,12 @@ pub struct CapturePieceToHistory {
 }
 
 impl CapturePieceToHistory {
-    pub fn get(&self, pc: Piece, to: Square, cap: PieceType) -> i32 {
-        self.v[pc.0 as usize][to.0 as usize][cap.0 as usize].get() as i32
+    pub fn get(&self, pc: Piece, to: Square, pt: PieceType) -> i32 {
+        self.v[pc.0 as usize][to.0 as usize][pt as usize].get() as i32
     }
 
-    pub fn update(&self, pc: Piece, to: Square, cap: PieceType, bonus: i32) {
-        let entry = &self.v[pc.0 as usize][to.0 as usize][cap.0 as usize];
+    pub fn update(&self, pc: Piece, to: Square, pt: PieceType, bonus: i32) {
+        let entry = &self.v[pc.0 as usize][to.0 as usize][pt as usize];
         let mut val = entry.get();
         val += (bonus * 2 - val as i32 * bonus.abs() / 324) as i16;
         entry.set(val);
@@ -215,7 +215,7 @@ fn score_quiets(pos: &Position, mp: &mut MovePicker) {
 fn score_evasions(pos: &Position, list: &mut [ExtMove]) {
     for m in list.iter_mut() {
         m.value = if pos.capture(m.m) {
-            piece_value(MG, pos.piece_on(m.m.to())).0 - pos.moved_piece(m.m).piece_type().0 as i32
+            piece_value(MG, pos.piece_on(m.m.to())).0 - pos.moved_piece(m.m).piece_type() as i32
         } else {
             pos.main_history.get(pos.side_to_move(), m.m) - (1 << 28)
         }

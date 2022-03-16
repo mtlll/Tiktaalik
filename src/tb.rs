@@ -678,14 +678,14 @@ fn prt_str(pos: &Position, flip: bool) -> String {
     let mut s = String::new();
 
     for pt in (1..7).rev() {
-        for _ in 0..pos.count(c, PieceType(pt)) {
+        for _ in 0..pos.count(c, pt) {
             s.push(Position::PIECE_TO_CHAR.chars().nth(pt as usize).unwrap());
         }
     }
     s.push('v');
     c = !c;
     for pt in (1..7).rev() {
-        for _ in 0..pos.count(c, PieceType(pt)) {
+        for _ in 0..pos.count(c, pt) {
             s.push(Position::PIECE_TO_CHAR.chars().nth(pt as usize).unwrap());
         }
     }
@@ -698,7 +698,7 @@ fn calc_key_from_pcs(pcs: &[i32; 16], flip: bool) -> Key {
 
     for c in 0..2 {
         for pt in 1..7 {
-            let pc = Piece::make(Color(c), PieceType(pt));
+            let pc = Piece::make(Color(c), pt);
             for i in 0..pcs[pc.0 as usize] {
                 key ^= material(pc ^ flip, i);
             }
@@ -860,12 +860,12 @@ pub fn init_tb(name: &str) {
     let mut color = 0;
     for c in name.chars() {
         match c {
-            'P' => pcs[PAWN.0 as usize | color] += 1,
-            'N' => pcs[KNIGHT.0 as usize | color] += 1,
-            'B' => pcs[BISHOP.0 as usize | color] += 1,
-            'R' => pcs[ROOK.0 as usize | color] += 1,
-            'Q' => pcs[QUEEN.0 as usize | color] += 1,
-            'K' => pcs[KING.0 as usize | color] += 1,
+            'P' => pcs[PAWN as usize | color] += 1,
+            'N' => pcs[KNIGHT as usize | color] += 1,
+            'B' => pcs[BISHOP as usize | color] += 1,
+            'R' => pcs[ROOK as usize | color] += 1,
+            'Q' => pcs[QUEEN as usize | color] += 1,
+            'K' => pcs[KING as usize | color] += 1,
             'v' => color = 8,
             _ => {}
         }
