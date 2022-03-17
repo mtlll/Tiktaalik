@@ -17,6 +17,7 @@ use ucioption;
 use std;
 use std::io::stdout;
 use std::io::Write;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 pub const CM_THRESHOLD: i32 = 0;
@@ -2070,8 +2071,8 @@ fn update_stats(
 
 fn update_counters(pos: &Position) {
     let th = pos.thread_ctrl.as_ref().unwrap();
-    th.nodes.set(pos.nodes);
-    th.tb_hits.set(pos.tb_hits);
+    th.nodes.store(pos.nodes, Ordering::Release);
+    th.tb_hits.store(pos.tb_hits, Ordering::Release);
 }
 
 // check_time() is used to print debug info and, more importantly, to detect

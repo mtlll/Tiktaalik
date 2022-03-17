@@ -44,9 +44,8 @@ pub struct ThreadCtrl {
     pub state: Mutex<ThreadState>,
     pub common: Mutex<CommonState>,
     pub cv: Condvar,
-    // nodes and tb_hits are Cell<u64> for lack of atomic u64 types
-    pub nodes: Cell<u64>,
-    pub tb_hits: Cell<u64>,
+    pub nodes: AtomicU64,
+    pub tb_hits: AtomicU64,
 }
 
 impl ThreadCtrl {
@@ -71,14 +70,11 @@ impl ThreadCtrl {
                 })),
             }),
             cv: Condvar::new(),
-            nodes: Cell::new(0),
-            tb_hits: Cell::new(0),
+            nodes: AtomicU64::new(0),
+            tb_hits: AtomicU64::new(0),
         }
     }
 }
-
-// Remove next line when nodes and tb_hits can be made atomic u64
-unsafe impl Sync for ThreadCtrl {}
 
 type Handlers = Vec<thread::JoinHandle<()>>;
 type Threads = Vec<Arc<ThreadCtrl>>;
@@ -346,8 +342,8 @@ pub fn start_thinking(
     }));
 
     for th in threads.iter() {
-        th.nodes.set(0);
-        th.tb_hits.set(0);
+        th.nodes.store(0, Ordering::Release);
+        th.tb_hits.store(0, Ordering::Release);
         let mut common = th.common.lock().unwrap();
         common.root_moves = root_moves.clone();
         common.pos_data = pos_data.clone();
@@ -365,7 +361,7 @@ pub fn nodes_searched() -> u64 {
     let mut nodes = 0;
 
     for th in threads.iter() {
-        nodes += th.nodes.get();
+        nodes += th.nodes.load(Ordering::Acquire);
     }
 
     std::mem::forget(threads);
@@ -379,7 +375,7 @@ pub fn tb_hits() -> u64 {
     let mut tb_hits = 0;
 
     for th in threads.iter() {
-        tb_hits += th.tb_hits.get();
+        tb_hits += th.tb_hits.load(Ordering::Acquire);
     }
 
     std::mem::forget(threads);
