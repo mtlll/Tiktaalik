@@ -447,6 +447,167 @@ fn init_stack(pos: &Position) -> Vec<Stack> {
     stack
 }
 
+fn next_guess(alpha: Value, beta: Value, stc: i32) -> Value {
+    alpha + ((beta - alpha) * (stc - 1)) / stc
+}
+
+fn expected_quality(better_count: i32, nodes_checked: i32, total_nodes: i32) -> f64 {
+    1.0
+}
+
+// thread_search() is the main iterative deepening loop. It calls search()
+// repeatedly with increasing depth until the allocated thinking time has
+// been consumed, the user stops the search, or the maximum search depth
+// is reached.
+pub fn thread_search_2(pos: &mut Position, _th: &threads::ThreadCtrl) {
+    let mut stack = init_stack(pos);
+
+    let mut last_best_move = Move::NONE;
+    let mut last_best_move_depth = Depth::ZERO;
+
+    reset_root_metrics(pos);
+
+    let mut alpha = -Value::INFINITE;
+    let mut delta = -Value::INFINITE;
+    let mut best_value = -Value::INFINITE;
+    let mut beta = Value::INFINITE;
+
+    let us = pos.side_to_move();
+
+    let mut multi_pv = ucioption::get_i32("MultiPV") as usize;
+    multi_pv = std::cmp::min(multi_pv, pos.root_moves.len());
+
+    let base_ct = compute_contempt(us);
+    let mut root_depth = Depth::ZERO;
+    let max_depth = get_max_depth(pos);
+    let mut contending_moves: Vec<Move> = Vec::new();
+
+    // Iterative deepening loop until requested to stop or the target depth
+    // is reached
+    while !threads::stop() {
+        root_depth += ONE_PLY;
+        if root_depth >= max_depth {
+            break;
+        }
+
+        // Distribute search depths across the threads
+        if should_distribute(pos, root_depth) {
+            continue;
+        }
+
+        // Age out PV variability metric
+        if pos.is_main {
+            pos.best_move_changes *= 0.517;
+            pos.failed_low = false;
+        }
+
+        // Save the last iteration's scores before first PV line is searched
+        // and all the move scores except the (new) PV are set to
+        // -Value::INFINITE.
+        for rm in pos.root_moves.iter_mut() {
+            rm.previous_score = rm.score;
+        }
+
+        let mut pv_first = 0;
+        pos.pv_last = 0;
+
+        pos.pv_idx = 0;
+
+        //Best Node Search: Make a guess and search with null windows until only one move exceeds the guess.
+        let quality: f64 = 1.0;
+        let mut better_count: i32 = 0;
+        let mut searched_count: i32 = 0;
+
+        let moves: Vec<Move> = if contending_moves.is_empty() {
+            MoveList::new::<LEGAL>(pos).collect()
+        } else {
+            contending_moves.drain(..).collect()
+        };
+        let mut stc: i32 = moves.len() as i32; //subtree count
+
+        let mut best_move = Move::NONE;
+
+        'bns_loop: loop {
+            let test: Value = next_guess(alpha, beta, stc);
+            better_count = 0;
+            searched_count = 0;
+            for m in moves.iter() {
+                let moved_piece = pos.moved_piece(*m);
+                let gives_check = is_check(*m, pos, moved_piece);
+                pos.do_move(*m, gives_check);
+                let eval = -search::<NONPV>(
+                    pos,
+                    &mut stack,
+                    -test,
+                    -(test - 1),
+                    root_depth,
+                    false,
+                    false,
+                );
+                searched_count += 1;
+                pos.undo_move(*m);
+
+                if eval >= test {
+                    better_count += 1;
+                    best_move = *m;
+                    let expected_quality = expected_quality(better_count, searched_count, stc);
+
+                    if expected_quality > quality {
+                        break 'bns_loop;
+                    }
+
+                    contending_moves.push(*m);
+                }
+            }
+
+            if better_count == 1 {
+                break;
+            } else if better_count > 1 {
+                // adjust alpha and subtree count
+                alpha = test;
+                stc = better_count;
+            } else if (beta - alpha) < Value(2) {
+                break;
+            } else {
+                //Adjust beta
+                beta = test;
+            }
+        }
+
+        // End of multiPV loop
+
+        if !threads::stop() {
+            pos.completed_depth = root_depth;
+        }
+
+        if pos.root_moves[0].pv[0] != last_best_move {
+            last_best_move = best_move;
+            last_best_move_depth = root_depth;
+
+            if pos.is_main {
+                // We record how often the best move changes in each iteration.
+                // This information is used for time management: if the best
+                // move changes frequently, we allocate some more time.
+                pos.best_move_changes += 1.0;
+            }
+        }
+
+        // Have we found a "mate in x"?
+        if limits().mate != 0
+            && best_value >= Value::MATE_IN_MAX_PLY
+            && (Value::MATE - best_value).0 <= 2 * (limits().mate as i32)
+        {
+            threads::set_stop(true);
+        }
+
+        // Do we have time for the next iteration? Can we stop searching now?
+
+        if pos.is_main {
+            manage_time(pos, best_value, last_best_move_depth);
+        }
+    } // End of iterative deepening loop
+}
+
 // thread_search() is the main iterative deepening loop. It calls search()
 // repeatedly with increasing depth until the allocated thinking time has
 // been consumed, the user stops the search, or the maximum search depth
@@ -1175,14 +1336,7 @@ fn search<const pv_node: bool>(
         let mut extension = Depth::ZERO;
         let capture_or_promotion = pos.capture_or_promotion(m);
         let moved_piece = pos.moved_piece(m);
-
-        let gives_check = if m.move_type() == NORMAL
-            && pos.blockers_for_king(!pos.side_to_move()) & pos.pieces_c(pos.side_to_move()) == 0
-        {
-            pos.check_squares(moved_piece.piece_type()) & m.to() != 0
-        } else {
-            pos.gives_check(m)
-        };
+        let gives_check = is_check(m, pos, moved_piece);
 
         let move_count_pruning =
             depth < 16 * ONE_PLY && move_count >= futility_move_counts(improving, depth);
@@ -1404,11 +1558,7 @@ fn search<const pv_node: bool>(
         }
 
         if root_node {
-            let rm = pos
-                .root_moves
-                .iter_mut()
-                .find(|ref rm| rm.pv[0] == m)
-                .unwrap();
+            let rm = pos.root_moves.iter_mut().find(|rm| rm.pv[0] == m).unwrap();
 
             // PV move or new best move?
             if move_count == 1 || value > alpha {
@@ -1418,13 +1568,6 @@ fn search<const pv_node: bool>(
 
                 for &m in ss[6].pv.iter() {
                     rm.pv.push(m);
-                }
-
-                // We record how often the best move changes in each iteration.
-                // This information is used for time management: if the best
-                // move changes frequently, we allocate some more time.
-                if move_count > 1 && pos.is_main {
-                    pos.best_move_changes += 1.0;
                 }
             } else {
                 // All other moves but the PV are set to the lowest value: this
@@ -1541,6 +1684,16 @@ fn search<const pv_node: bool>(
     debug_assert!(best_value > -Value::INFINITE && best_value < Value::INFINITE);
 
     best_value
+}
+
+fn is_check(m: Move, pos: &mut Position, moved_piece: Piece) -> bool {
+    if m.move_type() == NORMAL
+        && pos.blockers_for_king(!pos.side_to_move()) & pos.pieces_c(pos.side_to_move()) == 0
+    {
+        pos.check_squares(moved_piece.piece_type()) & m.to() != 0
+    } else {
+        pos.gives_check(m)
+    }
 }
 
 // qsearch() is the quiescence search function, which is called by the main
