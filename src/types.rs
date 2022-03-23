@@ -4,7 +4,7 @@
 
 use std;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Key(pub u64);
 
 impl std::ops::BitXor<Key> for Key {

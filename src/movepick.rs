@@ -227,12 +227,13 @@ fn score_evasions(pos: &Position, list: &mut [ExtMove]) {
 // is at the current node.
 
 impl MovePicker {
-    pub fn new(pos: &Position, ttm: Move, d: Depth, ss: &[search::Stack]) -> MovePicker {
+    pub fn new(pos: &Position,  d: Depth, ss: &[search::Stack]) -> MovePicker {
         let mut stage = if pos.checkers() != 0 {
             EVASION
         } else {
             MAIN_SEARCH
         };
+	let ttm = ss[5].tt_move;
         let tt_move = if ttm != Move::NONE && pos.pseudo_legal(ttm) {
             ttm
         } else {

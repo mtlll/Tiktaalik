@@ -30,8 +30,30 @@ pub struct Stack {
     static_eval: Value,
     stat_score: i32,
     move_count: i32,
+    //search stack frame:
+    in_check: bool,
+    pub tt_move: Move,
+    pos_key: Key,
 }
 
+impl Stack {
+    fn new(pos: &Position) -> Stack {
+        Stack {
+            pv: Vec::new(),
+            cont_history: pos.cont_history.get(NO_PIECE, Square(0)),
+            ply: 0,
+            current_move: Move::NONE,
+            excluded_move: Move::NONE,
+            killers: [Move::NONE; 2],
+            static_eval: Value::ZERO,
+            stat_score: 0,
+            move_count: 0,
+            in_check: false,
+            tt_move: Move::NONE,
+            pos_key: Key::default(),
+        }
+    }
+}
 #[derive(Clone, Eq)]
 pub struct RootMove {
     pub score: Value,
@@ -327,22 +349,6 @@ pub fn mainthread_search(pos: &mut Position, th: &threads::ThreadCtrl) {
     stdout().flush().unwrap();
 }
 
-impl Stack {
-    fn new(pos: &Position) -> Stack {
-        Stack {
-            pv: Vec::new(),
-            cont_history: pos.cont_history.get(NO_PIECE, Square(0)),
-            ply: 0,
-            current_move: Move::NONE,
-            excluded_move: Move::NONE,
-            killers: [Move::NONE; 2],
-            static_eval: Value::ZERO,
-            stat_score: 0,
-            move_count: 0,
-        }
-    }
-}
-
 fn compute_contempt(us: Color) -> i32 {
     let mut base_ct = ucioption::get_i32("Contempt") * PawnValueEg.0 / 100;
 
@@ -530,7 +536,7 @@ pub fn thread_search(pos: &mut Position, _th: &threads::ThreadCtrl) {
             // high/low, re-search with a bigger window until we're no longer
             // failing high/low.
             loop {
-                best_value = search::<PV>(pos, &mut stack, alpha, beta, root_depth, false, false);
+                best_value = root_search(pos, &mut stack, alpha, beta, root_depth);
 
                 update_counters(pos);
 
@@ -678,45 +684,61 @@ struct MovesSearched {
 
 impl Default for MovesSearched {
     fn default() -> Self {
-	MovesSearched {
-	    captures: [Move::NONE; 32],
-	    ncaptures: 0,
-	    quiets: [Move::NONE; 64],
-	    nquiets: 0,
-	}
+        MovesSearched {
+            captures: [Move::NONE; 32],
+            ncaptures: 0,
+            quiets: [Move::NONE; 64],
+            nquiets: 0,
+        }
     }
 }
 
 impl MovesSearched {
-
     pub fn update(&mut self, is_capture: bool, m: Move) {
-	if is_capture {
-	    if self.ncaptures < 32 {
-		self.captures[self.ncaptures] = m;
-		self.ncaptures += 1;
-	    }
-	} else if self.nquiets < 64 {
-	    self.quiets[self.nquiets] = m;
-	    self.nquiets += 1;
-	}
+        if is_capture {
+            if self.ncaptures < 32 {
+                self.captures[self.ncaptures] = m;
+                self.ncaptures += 1;
+            }
+        } else if self.nquiets < 64 {
+            self.quiets[self.nquiets] = m;
+            self.nquiets += 1;
+        }
     }
 }
-fn root_search(pos: &mut Position, 
-	       ss: &mut [Stack],
-	       mut alpha: Value,
-	       beta: Value,
-	       depth: Depth) -> Value {
+
+struct MoveData {
+    m: Move,
+    capt_or_prom: bool,
+    gives_check: bool,
+    moved_piece: Piece,
+}
+
+impl MoveData {
+    fn new(pos: &mut Position, m: Move) -> MoveData {
+	let moved_piece = pos.moved_piece(m);
+        MoveData {
+            m,
+            capt_or_prom: pos.capture_or_promotion(m),
+            moved_piece,
+            gives_check: is_check(m, pos, moved_piece),
+        }
+    }
+}
+fn root_search(
+    pos: &mut Position,
+    ss: &mut [Stack],
+    mut alpha: Value,
+    beta: Value,
+    depth: Depth,
+) -> Value {
     debug_assert!(-Value::INFINITE <= alpha && alpha < beta && beta <= Value::INFINITE);
     debug_assert!(Depth::ZERO < depth && depth < Depth::MAX);
     debug_assert!(depth / ONE_PLY * ONE_PLY == depth);
 
-
     let mut moves_searched = MovesSearched::default();
 
     // Step 1. Initialize node
-    let in_check = pos.checkers() != 0;
-    let mut move_count = 0;
-		 
     let mut best_value = -Value::INFINITE;
     let max_value = Value::INFINITE;
     let mut best_move = Move::NONE;
@@ -724,152 +746,86 @@ fn root_search(pos: &mut Position,
 
     // Check for the available remaining time
     check_time(pos);
-
-    pos.sel_depth = std::cmp::max(pos.sel_depth, ss[5].ply);
-    debug_assert!(0 <= ss[5].ply && ss[5].ply < MAX_PLY);
-
     init_frame(ss, pos);
 
-    /* Step 4. Transposition table lookup.
-     / We don't want the score of a
-     / partial search to overwrite a previous full search TT value, so we use
-     / a different position key in case of an excluded move.
-     */
-    let excluded_move = ss[5].excluded_move;
-    let pos_key = pos.key() ^ Key((excluded_move.0 << 16) as u64);
-    let (tte, tt_hit) = tt::probe(pos_key);
-    let tt_move = pos.root_moves[pos.pv_idx].pv[0];
-		  
-
-    // Step 6. Evaluate the position statically
-    if in_check {
-            ss[5].static_eval = Value::NONE;
-    } else if tt_hit {
-            // Never assume anything about values stored in TT
-            let mut tmp = tte.eval();
-            if tmp == Value::NONE {
-                tmp = evaluate(pos);
-            }
-            ss[5].static_eval = tmp;
-    } else {
-	ss[5].static_eval = if ss[4].current_move != Move::NULL {
-	    evaluate(pos)
-	} else {
-	    -ss[4].static_eval + 2 * evaluate::TEMPO
-	};
-	tte.save(
-	    pos_key,
-	    Value::NONE,
-	    Bound::NONE,
-	    Depth::NONE,
-	    Move::NONE,
-	    ss[5].static_eval,
-	    tt::generation(),
-	);
-    }
-    /*
-	    // It seems that this should be dead code in a root search, since:
-	// tt_move is set to pos.root_moves[0].pv[0].
-	// This is unlikely to be a null move except on the very first iteration of iterative deepening
-	// at which point depth is < 6 anyway and the conditions fails.
-	// Step 11. Internal iterative deepening (skipped when in check)
-	if  depth >= 6 * ONE_PLY
-	&& tt_move == Move::NONE
-	&& pos.non_pawn_material_c(pos.side_to_move()) != Value::ZERO 
-	{
-	let d = (3 * depth / (4 * ONE_PLY) - 2) * ONE_PLY;
-	search::<true>(pos, ss, alpha, beta, d, false, true);
-
-	let (tmp_tte, tmp_tt_hit) = tt::probe(pos_key);
-	tte = tmp_tte;
-	tt_hit = tmp_tt_hit;
-	tt_move = if tt_hit { tte.mov() } else { Move::NONE };
-      }
-
-     */
-    
-
-		      // When in check search starts from here ("moves_loop")
+    ss[5].tt_move = pos.root_moves[pos.pv_idx].pv[0];
+    let (tte, tt_hit) = tt_lookup(pos, ss);
 
     let cont_hist = (ss[4].cont_history, ss[3].cont_history, ss[1].cont_history);
 
-    let mut mp = MovePicker::new(pos, tt_move, depth, ss);
     let mut value = best_value;
 
+    //is this always true?
     let improving = ss[5].static_eval >= ss[3].static_eval || ss[3].static_eval == Value::NONE;
 
     let mut tt_capture = false;
     let pv_exact = tt_hit && tte.bound() == Bound::EXACT;
 
-    
     /* Step 12. Loop through moves
-     / Loop through all pseudo-legal moves until no moves remain or a beta
-     / cutoff occurs
-     */
-    loop {
-        let m = mp.next_move(pos, false);
+    / Loop through all pseudo-legal moves until no moves remain or a beta
+    / cutoff occurs
+    */
+    let root_moves: Vec<MoveData> = {
+
+	let tmp: Vec<Move> = pos.root_moves.iter().filter_map(|rm| {
+	    let m = rm.pv[0];
+	    if m == Move::NONE || m == ss[5].excluded_move {
+		None
+	    } else {
+		Some(m)
+	    }
+	}).collect();
+
+	tmp.into_iter().map(|m| MoveData::new(pos, m)).collect()
+
+    };
+
+    for MoveData {m, capt_or_prom, gives_check, moved_piece} in root_moves {
         if m == Move::NONE {
             break;
         }
 
         debug_assert!(m.is_ok());
 
-        if m == excluded_move {
+        if m == ss[5].excluded_move {
             continue;
         }
 
-        /* At root obey the "searchmoves" option.
-         / Skip moves not listed in root_moves.
-         / As a consequence, any illegal move is also skipped.
-         / In MultiPV mode we also skip PV moves which have already been searched.
-        */
-        if !pos.root_moves[pos.pv_idx..].iter().any(|rm| rm.pv[0] == m) {
-            continue;
-        }
-
-        move_count += 1;
-        ss[5].move_count = move_count;
+        ss[5].move_count += 1;
 
         if pos.is_main && timeman::elapsed() > 3000 {
             println!(
                 "info depth {} currmove {} currmovenumber {}",
                 depth / ONE_PLY,
                 uci::move_str(m, pos.is_chess960()),
-                move_count + pos.pv_idx as i32
+                ss[5].move_count + pos.pv_idx as i32
             );
             stdout().flush().unwrap();
         }
 
-	ss[6].pv.truncate(0);
-
-        let mut extension = Depth::ZERO;
-        let capture_or_promotion = pos.capture_or_promotion(m);
-        let moved_piece = pos.moved_piece(m);
-        let gives_check = is_check(m, pos, moved_piece);
+        ss[6].pv.truncate(0);
 
         let move_count_pruning =
-            depth < 16 * ONE_PLY && move_count >= futility_move_counts(improving, depth);
-
-        // Step 13. Singular and Gives Check Extensions
+            depth < 16 * ONE_PLY && ss[5].move_count >= futility_move_counts(improving, depth);
 
         /* Singular extension search.
+         // Step 13. Singular and Gives Check Extensions
          / If all moves but one fail low on a search of (alpha-s, beta-s),
          / and just one fails high on (alpha, beta), then
-	 / that is singular and should be extended. To verify this, we do a
-	 / reduced search on all moves but the tt_move and if the result is
-	 / lower than tt_value minus a margin, we will extend the tt_move.
-         */
-        if gives_check && !move_count_pruning && pos.see_ge(m, Value::ZERO) {
-            extension = ONE_PLY;
-        }
+         / that is singular and should be extended. To verify this, we do a
+         / reduced search on all moves but the tt_move and if the result is
+         / lower than tt_value minus a margin, we will extend the tt_move.
+        */
 
         // Calculate new depth for this move
-        let new_depth = depth - ONE_PLY + extension;
+        let new_depth = if gives_check && !move_count_pruning && pos.see_ge(m, Value::ZERO) {
+            depth
+        } else {
+            depth - ONE_PLY
+        };
 
         // prefetch
-
-
-        if m == tt_move && capture_or_promotion {
+        if m == ss[5].tt_move && capt_or_prom {
             tt_capture = true;
         }
 
@@ -882,20 +838,21 @@ fn root_search(pos: &mut Position,
         pos.do_move(m, gives_check);
 
         /* Step 16. Reduced depth search (LMR).
-         / If the move fails high it will
-	 / be re-searched at full depth.
-         */
+        / If the move fails high it will
+        / be re-searched at full depth.
+        */
         let do_full_depth_search;
 
-        if depth >= 3 * ONE_PLY && move_count > 1 && (!capture_or_promotion || move_count_pruning) {
-            let mut r = reduction::<true>(improving, depth, move_count);
+        if depth >= 3 * ONE_PLY
+            && ss[5].move_count > 1
+            && (!capt_or_prom || move_count_pruning)
+        {
+            let mut r = reduction::<true>(improving, depth, ss[5].move_count);
 
-            if capture_or_promotion {
-                r -= if r != Depth::ZERO {
-                    ONE_PLY
-                } else {
-                    Depth::ZERO
-                };
+            if capt_or_prom {
+                if r != Depth::ZERO {
+                    r -= ONE_PLY;
+                }
             } else {
                 // Decrease reduction if opponent's move count is high
                 if ss[4].move_count > 15 {
@@ -911,11 +868,10 @@ fn root_search(pos: &mut Position,
                 if tt_capture {
                     r += ONE_PLY;
                 }
-
                 /* Decrease reduction for moves that escape a capture.
-                 / Filter out castling moves, because they are coded as
-                 / "king captures rook" and hence break do_move().
-		 */
+                        / Filter out castling moves, because they are coded as
+                        / "king captures rook" and hence break do_move().
+                */
                 else if m.move_type() == NORMAL
                     && !pos.see_ge(Move::make(m.to(), m.from()), Value::ZERO)
                 {
@@ -947,7 +903,7 @@ fn root_search(pos: &mut Position,
             value = -search::<NONPV>(pos, &mut ss[1..], -(alpha + 1), -alpha, d, true, false);
             do_full_depth_search = value > alpha && d != new_depth;
         } else {
-            do_full_depth_search = move_count > 1;
+            do_full_depth_search = ss[5].move_count > 1;
         }
 
         // Step 17. Full depth search if LMR is skipped or fails high
@@ -965,20 +921,19 @@ fn root_search(pos: &mut Position,
                     -(alpha + 1),
                     -alpha,
                     new_depth,
-		    true,
+                    true,
                     false,
                 )
             }
         }
 
-	
-	/* Full window search for PV nodes.
-         / For PV nodes only, do a full PV search on the first move or after a
-         / fail high (in the latter case search only if value < beta),
-         / otherwise let the parent node fail low with value <= alpha and try
-         / another move.
-	 */
-        if move_count == 1 || value > alpha {
+        /* Full window search for PV nodes.
+            / For PV nodes only, do a full PV search on the first move or after a
+            / fail high (in the latter case search only if value < beta),
+            / otherwise let the parent node fail low with value <= alpha and try
+            / another move.
+        */
+        if ss[5].move_count == 1 || value > alpha {
             ss[6].pv.truncate(0);
 
             value = if new_depth < ONE_PLY {
@@ -998,33 +953,33 @@ fn root_search(pos: &mut Position,
         debug_assert!(value > -Value::INFINITE && value < Value::INFINITE);
 
         /* Step 19. Check for a new best move
-         / Finished searching the move. If a stop occurred, the return value
-         / of the search cannot be trusted, and we return immediately without
-         / updating best move, PV and TT.
-	 */
+           / Finished searching the move. If a stop occurred, the return value
+           / of the search cannot be trusted, and we return immediately without
+           / updating best move, PV and TT.
+        */
         if threads::stop() {
             return Value::ZERO;
         }
 
-	let rm = pos.root_moves.iter_mut().find(|rm| rm.pv[0] == m).unwrap();
+        let rm = pos.root_moves.iter_mut().find(|rm| rm.pv[0] == m).unwrap();
 
-	// PV move or new best move?
-	if move_count == 1 || value > alpha {
-	    rm.score = value;
-	    rm.sel_depth = pos.sel_depth;
-	    rm.pv.truncate(1);
+        // PV move or new best move?
+        if ss[5].move_count == 1 || value > alpha {
+            rm.score = value;
+            rm.sel_depth = pos.sel_depth;
+            rm.pv.truncate(1);
 
-	    for &m in ss[6].pv.iter() {
-		rm.pv.push(m);
-	    }
-	} else {
-	    /* All other moves but the PV are set to the lowest value.
-	     / This is not a problem when sorting because the sort is stable
-	     / and the move position in the list is preserved - just the PV is
-	     / pushed up.
-	     */
-	    rm.score = -Value::INFINITE;
-	}
+            for &m in ss[6].pv.iter() {
+                rm.pv.push(m);
+            }
+        } else {
+            /* All other moves but the PV are set to the lowest value.
+            / This is not a problem when sorting because the sort is stable
+            / and the move position in the list is preserved - just the PV is
+            / pushed up.
+            */
+            rm.score = -Value::INFINITE;
+        }
 
         if value > best_value {
             best_value = value;
@@ -1042,28 +997,28 @@ fn root_search(pos: &mut Position,
             }
         }
 
-	if m != best_move {
-	    moves_searched.update(capture_or_promotion, m);
-	}
+        if m != best_move {
+            moves_searched.update(capt_or_prom, m);
+        }
     }
 
     /* Step 20. Check for mate and stalemate
-     / All legal moves have been searched and if there are no legal moves, it
-     / must be a mate or a stalemate. If we are in a singular extension search,
-     / then return a fail low score.
-     */
+    / All legal moves have been searched and if there are no legal moves, it
+    / must be a mate or a stalemate. If we are in a singular extension search,
+    / then return a fail low score.
+    */
 
-    if move_count == 0 {
-        best_value = if excluded_move != Move::NONE {
+    if ss[5].move_count == 0 {
+        best_value = if ss[5].excluded_move != Move::NONE {
             alpha
-        } else if in_check {
+        } else if ss[5].in_check {
             mated_in(ss[5].ply)
         } else {
             Value::DRAW
         }
     } else if best_move != Move::NONE {
         // Quiet best move: update move sorting heuristics
-	update_the_stats(pos, ss, best_move, moves_searched, stat_bonus(depth));
+        update_the_stats(pos, ss, best_move, moves_searched, stat_bonus(depth));
 
         // Extra penalty for a quiet TT move in previous ply if refuted.
         if ss[4].move_count == 1 && pos.captured_piece() == NO_PIECE {
@@ -1074,10 +1029,9 @@ fn root_search(pos: &mut Position,
                 -stat_bonus(depth + ONE_PLY),
             );
         }
-    }
-    // Bonus for prior countermove that caused the fail low
-    else if depth >= 3 * ONE_PLY && pos.captured_piece() == NO_PIECE && ss[4].current_move.is_ok()
+    } else if depth >= 3 * ONE_PLY && pos.captured_piece() == NO_PIECE && ss[4].current_move.is_ok()
     {
+        // Bonus for prior countermove that caused the fail low
         update_continuation_histories(ss, pos.piece_on(prev_sq), prev_sq, stat_bonus(depth));
     }
 
@@ -1085,9 +1039,9 @@ fn root_search(pos: &mut Position,
         best_value = max_value;
     }
 
-    if excluded_move == Move::NONE {
+    if ss[5].excluded_move == Move::NONE {
         tte.save(
-            pos_key,
+            ss[5].pos_key,
             value_to_tt(best_value, ss[5].ply),
             if best_value >= beta {
                 Bound::LOWER
@@ -1108,6 +1062,76 @@ fn root_search(pos: &mut Position,
     best_value
 }
 
+fn tt_lookup(pos: &mut Position, ss: &mut [Stack]) -> (&'static mut tt::TTEntry, bool) {
+    ss[5].pos_key = pos.key() ^ Key((ss[5].excluded_move.0 << 16) as u64);
+    let (tte, tt_hit) = tt::probe(ss[5].pos_key);
+    ss[5].static_eval = if ss[5].in_check {
+        Value::NONE
+    } else if tt_hit {
+        // Never assume anything about values stored in TT
+        let mut tmp = tte.eval();
+        if tmp == Value::NONE {
+            tmp = evaluate(pos);
+        }
+        tmp
+    } else {
+        let tmp = if ss[4].current_move != Move::NULL {
+            evaluate(pos)
+        } else {
+            -ss[4].static_eval + 2 * evaluate::TEMPO
+        };
+
+        tte.save(
+            ss[5].pos_key,
+            Value::NONE,
+            Bound::NONE,
+            Depth::NONE,
+            Move::NONE,
+            tmp,
+            tt::generation(),
+        );
+
+        tmp
+    };
+    (tte, tt_hit)
+}
+
+fn fun_name(
+    in_check: bool,
+    ss: &mut [Stack],
+    tt_hit: bool,
+    tte: &mut tt::TTEntry,
+    pos: &mut Position,
+    pos_key: Key,
+) {
+    // Step 6. Evaluate the position statically
+    if in_check {
+        ss[5].static_eval = Value::NONE;
+    } else if tt_hit {
+        // Never assume anything about values stored in TT
+        let mut tmp = tte.eval();
+        if tmp == Value::NONE {
+            tmp = evaluate(pos);
+        }
+        ss[5].static_eval = tmp;
+    } else {
+        ss[5].static_eval = if ss[4].current_move != Move::NULL {
+            evaluate(pos)
+        } else {
+            -ss[4].static_eval + 2 * evaluate::TEMPO
+        };
+        tte.save(
+            pos_key,
+            Value::NONE,
+            Bound::NONE,
+            Depth::NONE,
+            Move::NONE,
+            ss[5].static_eval,
+            tt::generation(),
+        );
+    }
+}
+
 // search() is the main search function for both PV and non-PV nodes
 fn search<const pv_node: bool>(
     pos: &mut Position,
@@ -1119,7 +1143,6 @@ fn search<const pv_node: bool>(
     skip_early_pruning: bool,
 ) -> Value {
     let root_node = false;
-
 
     debug_assert!(-Value::INFINITE <= alpha && alpha < beta && beta <= Value::INFINITE);
     debug_assert!(pv_node || alpha == beta - 1);
@@ -1150,25 +1173,25 @@ fn search<const pv_node: bool>(
 
     // Step 2. Check for aborted search and immediate draw
     if threads::stop() || pos.is_draw(ss[5].ply) || ss[5].ply >= MAX_PLY {
-	return if ss[5].ply >= MAX_PLY && !in_check {
-	    evaluate(pos)
-	} else {
-	    Value::DRAW
-	};
+        return if ss[5].ply >= MAX_PLY && !in_check {
+            evaluate(pos)
+        } else {
+            Value::DRAW
+        };
     }
 
     /* Step 3. Mate distance pruning.
-     / Even if we mate at the next move
-     / our score would be at best mate_in(ss[5]->ply+1). If alpha is
-     / already bigger because a shorter mate was found upward in the
-     / tree then there is no need to search because we will never beat
-     / the current alpha. Same logic but with reversed signs applies
-     / in the opposite condition of being mated.
-     */
+    / Even if we mate at the next move
+    / our score would be at best mate_in(ss[5]->ply+1). If alpha is
+    / already bigger because a shorter mate was found upward in the
+    / tree then there is no need to search because we will never beat
+    / the current alpha. Same logic but with reversed signs applies
+    / in the opposite condition of being mated.
+    */
     alpha = std::cmp::max(mated_in(ss[5].ply), alpha);
     beta = std::cmp::min(mate_in(ss[5].ply + 1), beta);
     if alpha >= beta {
-	return alpha;
+        return alpha;
     }
 
     debug_assert!(0 <= ss[5].ply && ss[5].ply < MAX_PLY);
@@ -1176,10 +1199,10 @@ fn search<const pv_node: bool>(
     init_frame(ss, pos);
 
     /* Step 4. Transposition table lookup.
-     / We don't want the score of a
-     / partial search to overwrite a previous full search TT value, so we use
-     / a different position key in case of an excluded move.
-     */
+    / We don't want the score of a
+    / partial search to overwrite a previous full search TT value, so we use
+    / a different position key in case of an excluded move.
+    */
     let excluded_move = ss[5].excluded_move;
     let pos_key = pos.key() ^ Key((excluded_move.0 << 16) as u64);
     let (mut tte, mut tt_hit) = tt::probe(pos_key);
@@ -1188,11 +1211,8 @@ fn search<const pv_node: bool>(
     } else {
         Value::NONE
     };
-    let mut tt_move = if tt_hit {
-        tte.mov()
-    } else {
-        Move::NONE
-    };
+    let mut tt_move = if tt_hit { tte.mov() } else { Move::NONE };
+    ss[5].tt_move = tt_move;
 
     // At non-PV nodes we check for an early cutoff
     if !pv_node
@@ -1385,10 +1405,7 @@ fn search<const pv_node: bool>(
         }
 
         // Step 8. Futility pruning: child node (skipped when in check)
-        if  depth < 7 * ONE_PLY
-            && eval - futility_margin(depth) >= beta
-            && eval < Value::KNOWN_WIN
-        {
+        if depth < 7 * ONE_PLY && eval - futility_margin(depth) >= beta && eval < Value::KNOWN_WIN {
             return eval;
         }
 
@@ -1436,9 +1453,9 @@ fn search<const pv_node: bool>(
                 }
 
                 /* Do verification search at high depths
-                 / Disable null move pruning for the side to move for the
+		 / Disable null move pruning for the side to move for the
                  / first part of the remaining search tree
-		 */
+                 */
                 pos.nmp_ply = ss[5].ply + 3 * (depth - r) / (4 * ONE_PLY);
                 pos.nmp_odd = ss[5].ply & 1;
                 let v = if depth - r < ONE_PLY {
@@ -1455,10 +1472,10 @@ fn search<const pv_node: bool>(
         }
 
         /* Step 10. ProbCut (skipped when in check).
-         / If we have a good enough capture and a reduced search returns a
+	 / If we have a good enough capture and a reduced search returns a
          / value much above beta, we can (almost) safely prune the previous
          / move.
-	 */
+        */
         if !pv_node && depth >= 5 * ONE_PLY && beta.abs() < Value::MATE_IN_MAX_PLY {
             let rbeta = std::cmp::min(beta + 200, Value::INFINITE);
 
@@ -1539,7 +1556,7 @@ fn search<const pv_node: bool>(
 
     let cont_hist = (ss[4].cont_history, ss[3].cont_history, ss[1].cont_history);
 
-    let mut mp = MovePicker::new(pos, tt_move, depth, ss);
+    let mut mp = MovePicker::new(pos, depth, ss);
     let mut value = best_value;
 
     let improving = ss[5].static_eval >= ss[3].static_eval || ss[3].static_eval == Value::NONE;
@@ -1557,9 +1574,9 @@ fn search<const pv_node: bool>(
     let pv_exact = pv_node && tt_hit && tte.bound() == Bound::EXACT;
 
     /* Step 12. Loop through moves
-     / Loop through all pseudo-legal moves until no moves remain or a beta
-     / cutoff occurs
-     */
+    / Loop through all pseudo-legal moves until no moves remain or a beta
+    / cutoff occurs
+    */
     loop {
         let m = mp.next_move(pos, skip_quiets);
         if m == Move::NONE {
@@ -1573,15 +1590,14 @@ fn search<const pv_node: bool>(
         }
 
         /* At root obey the "searchmoves" option.
-         / Skip moves not listed in root_moves.
-         / As a consequence, any illegal move is also skipped.
-         / In MultiPV mode we also skip PV moves which have already been searched.
-         */
+        / Skip moves not listed in root_moves.
+        / As a consequence, any illegal move is also skipped.
+        / In MultiPV mode we also skip PV moves which have already been searched.
+        */
 
         move_count += 1;
         ss[5].move_count = move_count;
 
-        
         if pv_node {
             ss[6].pv.truncate(0);
         }
@@ -1597,12 +1613,12 @@ fn search<const pv_node: bool>(
         // Step 13. Singular and Gives Check Extensions
 
         /* Singular extension search.
-         / If all moves but one fail low on a search of (alpha-s, beta-s),
-         / and just one fails high on (alpha, beta), then
-	 / that is singular and should be extended. To verify this, we do a
-	 / reduced search on all moves but the tt_move and if the result is
-	 / lower than tt_value minus a margin, we will extend the tt_move.
-         */
+            / If all moves but one fail low on a search of (alpha-s, beta-s),
+            / and just one fails high on (alpha, beta), then
+        / that is singular and should be extended. To verify this, we do a
+        / reduced search on all moves but the tt_move and if the result is
+        / lower than tt_value minus a margin, we will extend the tt_move.
+            */
         if singular_extension_node && m == tt_move && pos.legal(m) {
             let rbeta = std::cmp::max(tt_value - 2 * depth / ONE_PLY, -Value::MATE);
             let d = (depth / (2 * ONE_PLY)) * ONE_PLY;
@@ -1621,7 +1637,7 @@ fn search<const pv_node: bool>(
         let new_depth = depth - ONE_PLY + extension;
 
         // Step 14. Pruning at shallow depth
-        if  pos.non_pawn_material_c(pos.side_to_move()) != Value::ZERO
+        if pos.non_pawn_material_c(pos.side_to_move()) != Value::ZERO
             && best_value > Value::MATED_IN_MAX_PLY
         {
             if !capture_or_promotion
@@ -1688,9 +1704,9 @@ fn search<const pv_node: bool>(
         pos.do_move(m, gives_check);
 
         /* Step 16. Reduced depth search (LMR).
-         / If the move fails high it will
-	 / be re-searched at full depth.
-         */
+            / If the move fails high it will
+        / be re-searched at full depth.
+            */
         let do_full_depth_search;
 
         if depth >= 3 * ONE_PLY && move_count > 1 && (!capture_or_promotion || move_count_pruning) {
@@ -1722,11 +1738,10 @@ fn search<const pv_node: bool>(
                 if cut_node {
                     r += 2 * ONE_PLY;
                 }
-
                 /* Decrease reduction for moves that escape a capture.
-                 / Filter out castling moves, because they are coded as
-                 / "king captures rook" and hence break do_move().
-		 */
+                        / Filter out castling moves, because they are coded as
+                        / "king captures rook" and hence break do_move().
+                */
                 else if m.move_type() == NORMAL
                     && !pos.see_ge(Move::make(m.to(), m.from()), Value::ZERO)
                 {
@@ -1782,13 +1797,12 @@ fn search<const pv_node: bool>(
             }
         }
 
-	
-	/* Full window search for PV nodes.
-         / For PV nodes only, do a full PV search on the first move or after a
-         / fail high (in the latter case search only if value < beta),
-         / otherwise let the parent node fail low with value <= alpha and try
-         / another move.
-	 */
+        /* Full window search for PV nodes.
+            / For PV nodes only, do a full PV search on the first move or after a
+            / fail high (in the latter case search only if value < beta),
+            / otherwise let the parent node fail low with value <= alpha and try
+            / another move.
+        */
         if pv_node && (move_count == 1 || (value > alpha && value < beta)) {
             ss[6].pv.truncate(0);
 
@@ -1809,10 +1823,10 @@ fn search<const pv_node: bool>(
         debug_assert!(value > -Value::INFINITE && value < Value::INFINITE);
 
         /* Step 19. Check for a new best move
-         / Finished searching the move. If a stop occurred, the return value
-         / of the search cannot be trusted, and we return immediately without
-         / updating best move, PV and TT.
-	 */
+            / Finished searching the move. If a stop occurred, the return value
+            / of the search cannot be trusted, and we return immediately without
+            / updating best move, PV and TT.
+        */
         if threads::stop() {
             return Value::ZERO;
         }
@@ -1848,10 +1862,10 @@ fn search<const pv_node: bool>(
     }
 
     /* Step 20. Check for mate and stalemante
-     / All legal moves have been searched and if there are no legal moves, it
-     / must be a mate or a stalemate. If we are in a singular extension search,
-     / then return a fail low score.
-     */
+    / All legal moves have been searched and if there are no legal moves, it
+    / must be a mate or a stalemate. If we are in a singular extension search,
+    / then return a fail low score.
+    */
 
     if move_count == 0 {
         best_value = if excluded_move != Move::NONE {
@@ -1926,6 +1940,9 @@ fn search<const pv_node: bool>(
 }
 
 fn init_frame(ss: &mut [Stack], pos: &mut Position) {
+    pos.sel_depth = std::cmp::max(pos.sel_depth, ss[5].ply);
+    debug_assert!(0 <= ss[5].ply && ss[5].ply < MAX_PLY);
+    ss[5].in_check = pos.checkers() != 0;
     ss[5].move_count = 0;
     ss[5].current_move = Move::NONE;
     ss[5].cont_history = pos.cont_history.get(NO_PIECE, Square(0));
@@ -2262,12 +2279,17 @@ fn update_continuation_histories(ss: &[Stack], pc: Piece, to: Square, bonus: i32
     }
 }
 
-fn update_the_stats(pos: &Position, ss: &mut [Stack], m: Move, searched: MovesSearched, bonus: i32) {
-
+fn update_the_stats(
+    pos: &Position,
+    ss: &mut [Stack],
+    m: Move,
+    searched: MovesSearched,
+    bonus: i32,
+) {
     if pos.capture_or_promotion(m) {
-	update_capture_stats(pos, m, &searched.captures, searched.ncaptures, bonus);
+        update_capture_stats(pos, m, &searched.captures, searched.ncaptures, bonus);
     } else {
-	update_stats(pos, ss, m, &searched.quiets, searched.nquiets, bonus);
+        update_stats(pos, ss, m, &searched.quiets, searched.nquiets, bonus);
     }
 }
 
@@ -2340,9 +2362,9 @@ fn check_time(pos: &mut Position) {
         pos.calls_cnt = 4095;
         update_counters(pos);
     } else {
-	return;
+        return;
     }
-    
+
     // An engine may not stop pondering until told so by the GUI
     if threads::ponder() {
         return;
