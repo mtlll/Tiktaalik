@@ -2,6 +2,7 @@
 
 use bitboard::*;
 use position::Position;
+use position::ThreadVars;
 use types::*;
 
 use std;
@@ -307,9 +308,9 @@ pub fn init() {
 // pawns::probe() looks up the current position's pawn configuration in the
 // pawn hash table. If it is not found, it is computed and stored in the table.
 
-pub fn probe(pos: &Position) -> &mut Entry {
+pub fn probe<'a>(pos: &Position, tv: &'a ThreadVars) -> &'a mut Entry {
     let key = pos.pawn_key();
-    let e = pos.pawns_table[(key.0 & 16383) as usize].get();
+    let e = tv.pawns_table[(key.0 & 16383) as usize].get();
     let e: &'static mut Entry = unsafe { &mut *e };
 
     if e.key == key {

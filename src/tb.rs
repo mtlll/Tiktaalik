@@ -2221,16 +2221,16 @@ fn root_probe_dtm(pos: &mut Position, root_moves: &mut RootMoves) -> bool {
     true
 }
 
-pub fn expand_mate(pos: &mut Position, idx: usize) {
+pub fn expand_mate(pos: &mut Position, root_moves: &mut RootMoves, idx: usize) {
     let mut success = 1;
     let mut chk = 0;
 
-    let mut v = pos.root_moves[idx].score;
+    let mut v = root_moves[idx].score;
     let mut wdl = if v > Value::ZERO { 2 } else { -2 };
 
     // First get to the end of the incomplete PV
-    for i in 0..pos.root_moves[idx].pv.len() {
-        let m = pos.root_moves[idx].pv[i];
+    for i in 0..root_moves[idx].pv.len() {
+        let m = root_moves[idx].pv[i];
         v = if v > Value::ZERO { -v - 1 } else { -v + 1 };
         wdl = -wdl;
         let gives_check = pos.gives_check(m);
@@ -2267,15 +2267,15 @@ pub fn expand_mate(pos: &mut Position, idx: usize) {
             if success == 0 || best_move == Move::NONE {
                 break;
             }
-            pos.root_moves[idx].pv.push(best_move);
+            root_moves[idx].pv.push(best_move);
             let gives_check = pos.gives_check(best_move);
             pos.do_move(best_move, gives_check);
         }
     }
 
     // Move back to the root position
-    for i in (0..pos.root_moves[idx].pv.len()).rev() {
-        let m = pos.root_moves[idx].pv[i];
+    for i in (0..root_moves[idx].pv.len()).rev() {
+        let m = root_moves[idx].pv[i];
         pos.undo_move(m);
     }
 }

@@ -1,5 +1,6 @@
 use movegen::*;
 use position::Position;
+use position::ThreadVars;
 use search;
 use types::*;
 
@@ -188,10 +189,10 @@ fn pick_best(list: &mut [ExtMove]) -> Move {
 
 // CAPTURES are ordered by Most Valuable Victim (MVV), preferring captures
 // with a good history.
-fn score_captures(pos: &Position, list: &mut [ExtMove]) {
+fn score_captures(pos: &Position, tv: &ThreadVars, list: &mut [ExtMove]) {
     for m in list.iter_mut() {
         m.value = piece_value(MG, pos.piece_on(m.m.to())).0
-            + pos.capture_history.get(
+            + tv.capture_history.get(
                 pos.moved_piece(m.m),
                 m.m.to(),
                 pos.piece_on(m.m.to()).piece_type(),
@@ -200,22 +201,22 @@ fn score_captures(pos: &Position, list: &mut [ExtMove]) {
 }
 
 // Quiets are ordered using the histories.
-fn score_quiets(pos: &Position, mp: &mut MovePicker) {
+fn score_quiets(pos: &Position, tv: &ThreadVars, mp: &mut MovePicker) {
     let list = &mut mp.list[mp.cur..mp.end_moves];
     for m in list.iter_mut() {
-        m.value = pos.main_history.get(pos.side_to_move(), m.m)
+        m.value = tv.main_history.get(pos.side_to_move(), m.m)
             + mp.cmh[0].get(pos.moved_piece(m.m), m.m.to())
             + mp.cmh[1].get(pos.moved_piece(m.m), m.m.to())
             + mp.cmh[2].get(pos.moved_piece(m.m), m.m.to());
     }
 }
 
-fn score_evasions(pos: &Position, list: &mut [ExtMove]) {
+fn score_evasions(pos: &Position, tv: &ThreadVars, list: &mut [ExtMove]) {
     for m in list.iter_mut() {
         m.value = if pos.capture(m.m) {
             piece_value(MG, pos.piece_on(m.m.to())).0 - pos.moved_piece(m.m).piece_type() as i32
         } else {
-            pos.main_history.get(pos.side_to_move(), m.m) - (1 << 28)
+            tv.main_history.get(pos.side_to_move(), m.m) - (1 << 28)
         }
     }
 }
@@ -227,7 +228,7 @@ fn score_evasions(pos: &Position, list: &mut [ExtMove]) {
 // is at the current node.
 
 impl MovePicker {
-    pub fn new(pos: &Position,  d: Depth, ss: &[search::Stack]) -> MovePicker {
+    pub fn new(pos: &Position, tv: &ThreadVars,  d: Depth, ss: &[search::Stack]) -> MovePicker {
         let mut stage = if pos.checkers() != 0 {
             EVASION
         } else {
@@ -249,7 +250,7 @@ impl MovePicker {
             end_bad_captures: 0,
             stage: stage,
             tt_move: ttm,
-            countermove: pos.counter_moves.get(pos.piece_on(prev_sq), prev_sq),
+            countermove: tv.counter_moves.get(pos.piece_on(prev_sq), prev_sq),
             killers: [ss[5].killers[0], ss[5].killers[1]],
             depth: d,
             cmh: [ss[4].cont_history, ss[3].cont_history, ss[1].cont_history],
@@ -260,7 +261,7 @@ impl MovePicker {
         }
     }
 
-    pub fn next_move(&mut self, pos: &Position, skip_quiets: bool) -> Move {
+    pub fn next_move(&mut self, pos: &Position, tv: &ThreadVars, skip_quiets: bool) -> Move {
         loop {
             match self.stage {
                 MAIN_SEARCH | EVASION => {
@@ -270,7 +271,7 @@ impl MovePicker {
 
                 CAPTURES_INIT => {
                     self.end_moves = generate::<CAPTURES>(pos, &mut self.list, 0);
-                    score_captures(pos, &mut self.list[..self.end_moves]);
+                    score_captures(pos, tv, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
 
@@ -329,7 +330,7 @@ impl MovePicker {
                 QUIET_INIT => {
                     self.cur = self.end_bad_captures;
                     self.end_moves = generate::<QUIETS>(pos, &mut self.list, self.cur);
-                    score_quiets(pos, self);
+                    score_quiets(pos, tv, self);
                     partial_insertion_sort(
                         &mut self.list[self.cur..self.end_moves],
                         -4000 * self.depth / ONE_PLY,
@@ -367,7 +368,7 @@ impl MovePicker {
                 EVASIONS_INIT => {
                     self.cur = 0;
                     self.end_moves = generate::<EVASIONS>(pos, &mut self.list, 0);
-                    score_evasions(pos, &mut self.list[..self.end_moves]);
+                    score_evasions(pos, tv, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
 
@@ -423,7 +424,7 @@ impl MovePickerQ {
         }
     }
 
-    pub fn next_move(&mut self, pos: &Position) -> Move {
+    pub fn next_move(&mut self, pos: &Position, tv: &ThreadVars) -> Move {
         loop {
             match self.stage {
                 EVASION | QSEARCH => {
@@ -434,7 +435,7 @@ impl MovePickerQ {
                 EVASIONS_INIT => {
                     self.cur = 0;
                     self.end_moves = generate::<EVASIONS>(pos, &mut self.list, 0);
-                    score_evasions(pos, &mut self.list[..self.end_moves]);
+                    score_evasions(pos, tv, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
 
@@ -452,7 +453,7 @@ impl MovePickerQ {
                 QCAPTURES_INIT => {
                     self.cur = 0;
                     self.end_moves = generate::<CAPTURES>(pos, &mut self.list, 0);
-                    score_captures(pos, &mut self.list[..self.end_moves]);
+                    score_captures(pos, tv, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
 
@@ -526,7 +527,7 @@ impl MovePickerPC {
         }
     }
 
-    pub fn next_move(&mut self, pos: &Position) -> Move {
+    pub fn next_move(&mut self, pos: &Position, tv: &ThreadVars) -> Move {
         loop {
             match self.stage {
                 PROBCUT => {
@@ -537,7 +538,7 @@ impl MovePickerPC {
                 PROBCUT_INIT => {
                     self.cur = 0;
                     self.end_moves = generate::<CAPTURES>(pos, &mut self.list, 0);
-                    score_captures(pos, &mut self.list[..self.end_moves]);
+                    score_captures(pos, tv, &mut self.list[..self.end_moves]);
                     self.stage += 1;
                 }
 

@@ -7,7 +7,7 @@ use uci;
 
 use std;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Bitboard(pub u64);
 
 pub fn popcount(bb: Bitboard) -> u32 {

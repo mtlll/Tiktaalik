@@ -4,6 +4,7 @@ use bitboard::*;
 use material;
 use pawns;
 use position::Position;
+use position::ThreadVars;
 use types::*;
 
 use std;
@@ -996,11 +997,11 @@ fn evaluate_scale_factor(pos: &Position, ei: &EvalInfo, eg: Value) -> ScaleFacto
 // of the evaluation and returns the value of the position from the point of
 // view of the side to move.
 
-pub fn evaluate(pos: &Position) -> Value {
+pub fn evaluate(pos: &Position, tv: &ThreadVars) -> Value {
     debug_assert!(pos.checkers() == 0);
 
     // Probe the material hash table
-    let me = material::probe(pos);
+    let me = material::probe(pos, tv);
 
     // If we have a specialized evluation function for the current material
     // configuration, call it and return.
@@ -1015,7 +1016,7 @@ pub fn evaluate(pos: &Position) -> Value {
     let mut score = pos.psq_score() + me.imbalance() + contempt();
 
     // Probe the pawn hash table
-    let pe = pawns::probe(pos);
+    let pe = pawns::probe(pos, tv);
     score += pe.pawns_score();
 
     // Early exit if score is high

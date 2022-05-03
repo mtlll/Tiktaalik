@@ -30,7 +30,7 @@ pub const MAX_MOVES: usize = 256;
 pub const MAX_PLY: i32 = 128;
 pub const MAX_MATE_PLY: i32 = 128;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Color(pub u32);
 
 pub const WHITE: Color = Color(0);
@@ -201,7 +201,7 @@ impl ScaleFactor {
     pub const NONE: ScaleFactor = ScaleFactor(255);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Bound(pub u32);
 
 impl Bound {
@@ -249,7 +249,7 @@ pub const QUEEN_DIAGONAL: PieceType = 7;
 
 pub const ALL_PIECES: PieceType = 0;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Piece(pub u32);
 
 pub const NO_PIECE: Piece = Piece(0);
@@ -305,7 +305,7 @@ impl std::ops::BitXor<bool> for Piece {
     }
 }
 
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Default)]
 pub struct Depth(pub i32);
 
 impl std::ops::Add<Depth> for Depth {
@@ -401,6 +401,13 @@ pub const RANK_8: Rank = 7;
 
 pub fn relative_rank(c: Color, r: Rank) -> Rank {
     r ^ (c.0 * 7)
+}
+
+impl Default for Square {
+
+    fn default() -> Self {
+	Self::NONE
+    }
 }
 
 impl Square {
@@ -646,7 +653,7 @@ pub const PROMOTION: MoveType = MoveType(1 << 14);
 pub const ENPASSANT: MoveType = MoveType(2 << 14);
 pub const CASTLING: MoveType = MoveType(3 << 14);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Move(pub u32);
 
 impl Move {

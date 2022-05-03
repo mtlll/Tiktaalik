@@ -7,6 +7,8 @@ use types::*;
 
 use std;
 
+use crate::position::ThreadVars;
+
 pub struct Entry {
     key: Key,
     scaling_function: [Option<ScaleFn>; 2],
@@ -137,9 +139,9 @@ fn imbalance(pc: &[[i32; 6]; 2], us: Color) -> i32 {
 // don't have to recompute all when the same material configuration occurs
 // again.
 
-pub fn probe(pos: &Position) -> &'static mut Entry {
+pub fn probe(pos: &Position, tv: &ThreadVars) -> &'static mut Entry {
     let key = pos.material_key();
-    let e = pos.material_table[(key.0 & 8191) as usize].get();
+    let e = tv.material_table[(key.0 & 8191) as usize].get();
     let e: &'static mut Entry = unsafe { &mut *e };
 
     if e.key == key {

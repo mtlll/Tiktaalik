@@ -158,6 +158,10 @@ pub struct Position {
     side_to_move: Color,
     states: Vec<StateInfo>,
     chess960: bool,
+    pub nodes: u64,
+}
+
+pub struct ThreadVars {
     // Thread variables from here
     // only for main thread:
     pub failed_low: bool,
@@ -174,10 +178,8 @@ pub struct Position {
     pub sel_depth: i32,
     pub nmp_ply: i32,
     pub nmp_odd: i32,
-    pub nodes: u64,
     pub tb_hits: u64,
     pub completed_depth: Depth,
-    pub root_moves: search::RootMoves,
     // thread-specific tables
     pub pawns_table: Vec<std::cell::UnsafeCell<pawns::Entry>>,
     pub material_table: Vec<std::cell::UnsafeCell<material::Entry>>,
@@ -185,6 +187,37 @@ pub struct Position {
     pub main_history: ButterflyHistory,
     pub capture_history: CapturePieceToHistory,
     pub cont_history: ContinuationHistory,
+}
+
+impl ThreadVars {
+    pub fn new() -> ThreadVars {
+	ThreadVars {
+	    //Non position states
+            failed_low: false,
+            best_move_changes: 0.0,
+            previous_time_reduction: 0.0,
+            previous_score: Value::ZERO,
+            calls_cnt: 0,
+            thread_ctrl: None,
+            is_main: false,
+            thread_idx: 0,
+            pv_idx: 0,
+            pv_last: 0,
+            sel_depth: 0,
+            nmp_ply: 0,
+            nmp_odd: 0,
+            tb_hits: 0,
+            completed_depth: Depth::ZERO,
+            pawns_table: Vec::new(),
+            material_table: Vec::new(),
+            counter_moves: unsafe { std::mem::zeroed() },
+            main_history: unsafe { std::mem::zeroed() },
+            capture_history: unsafe { std::mem::zeroed() },
+            cont_history: unsafe { std::mem::zeroed() },
+	}
+
+    }
+
 }
 
 impl Position {
@@ -203,29 +236,7 @@ impl Position {
             side_to_move: WHITE,
             states: Vec::new(),
             chess960: false,
-            failed_low: false,
-            best_move_changes: 0.0,
-            previous_time_reduction: 0.0,
-            previous_score: Value::ZERO,
-            calls_cnt: 0,
-            thread_ctrl: None,
-            is_main: false,
-            thread_idx: 0,
-            pv_idx: 0,
-            pv_last: 0,
-            sel_depth: 0,
-            nmp_ply: 0,
-            nmp_odd: 0,
             nodes: 0,
-            tb_hits: 0,
-            completed_depth: Depth::ZERO,
-            root_moves: Vec::new(),
-            pawns_table: Vec::new(),
-            material_table: Vec::new(),
-            counter_moves: unsafe { std::mem::zeroed() },
-            main_history: unsafe { std::mem::zeroed() },
-            capture_history: unsafe { std::mem::zeroed() },
-            cont_history: unsafe { std::mem::zeroed() },
         }
     }
 

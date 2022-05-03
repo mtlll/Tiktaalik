@@ -4,6 +4,7 @@ use material;
 use movegen::*;
 use pawns;
 use position::Position;
+use position::ThreadVars;
 use search::*;
 use tb;
 use types::*;
@@ -157,23 +158,24 @@ pub fn set(requested: usize) {
 
 fn run_thread(idx: usize, tx: Sender<Arc<ThreadCtrl>>) {
     let mut pos = Box::new(Position::new());
-    pos.pawns_table.reserve_exact(16384);
+    let mut tv: Box<ThreadVars> = Box::new(ThreadVars::new());
+    tv.pawns_table.reserve_exact(16384);
     for _ in 0..16384 {
-        pos.pawns_table
+        tv.pawns_table
             .push(std::cell::UnsafeCell::new(pawns::Entry::new()));
     }
-    pos.material_table.reserve_exact(8192);
+    tv.material_table.reserve_exact(8192);
     for _ in 0..8192 {
-        pos.material_table
+        tv.material_table
             .push(std::cell::UnsafeCell::new(material::Entry::new()));
     }
-    pos.is_main = idx == 0;
-    pos.thread_idx = idx as i32;
+    tv.is_main = idx == 0;
+    tv.thread_idx = idx as i32;
     let th = Arc::new(ThreadCtrl::new(idx));
     tx.send(th.clone()).unwrap();
-    pos.thread_ctrl = Some(th.clone());
-    pos.previous_time_reduction = 1.;
-    pos.cont_history.init();
+    tv.thread_ctrl = Some(th.clone());
+    tv.previous_time_reduction = 1.;
+    tv.cont_history.init();
 
     loop {
         let mut state = th.state.lock().unwrap();
@@ -188,18 +190,18 @@ fn run_thread(idx: usize, tx: Sender<Arc<ThreadCtrl>>) {
         if state.clear {
             // Clear this thread as part of ucinewgame
             if th.idx == 0 {
-                pos.previous_score = Value::INFINITE;
-                pos.previous_time_reduction = 1.;
+                tv.previous_score = Value::INFINITE;
+                tv.previous_time_reduction = 1.;
             }
-            pos.counter_moves = unsafe { std::mem::zeroed() };
-            pos.main_history = unsafe { std::mem::zeroed() };
-            pos.capture_history = unsafe { std::mem::zeroed() };
-            pos.cont_history = unsafe { std::mem::zeroed() };
-            pos.cont_history.init();
+            tv.counter_moves = unsafe { std::mem::zeroed() };
+            tv.main_history = unsafe { std::mem::zeroed() };
+            tv.capture_history = unsafe { std::mem::zeroed() };
+            tv.cont_history = unsafe { std::mem::zeroed() };
+            tv.cont_history.init();
             state.clear = false;
             continue;
         }
-        {
+        let mut root_moves = {
             let common = th.common.lock().unwrap();
             let pos_data = common.pos_data.read().unwrap();
             pos.init_states();
@@ -210,23 +212,23 @@ fn run_thread(idx: usize, tx: Sender<Arc<ThreadCtrl>>) {
             }
             let fen = pos.fen();
             pos.set(&fen, ucioption::get_bool("UCI_Chess960"));
-            pos.root_moves = (*common.root_moves).clone();
-        } // Locks are dropped here
+            (*common.root_moves).clone()
+        }; // Locks are dropped here
         pos.nodes = 0;
-        pos.tb_hits = 0;
+        tv.tb_hits = 0;
         if th.idx == 0 {
-            mainthread_search(&mut pos, &th);
+            mainthread_search(&mut pos, &mut tv, &mut root_moves, &th);
         } else {
-            thread_search(&mut pos, &th);
+            thread_search(&mut pos, &mut tv, &mut root_moves);
             let lock = th.common.lock().unwrap();
             let result = &mut lock.result.lock().unwrap();
-            if pos.root_moves[0].score > result.score
-                && (pos.completed_depth >= result.depth
-                    || pos.root_moves[0].score >= Value::MATE_IN_MAX_PLY)
+            if root_moves[0].score > result.score
+                && (tv.completed_depth >= result.depth
+                    || root_moves[0].score >= Value::MATE_IN_MAX_PLY)
             {
-                result.depth = pos.completed_depth;
-                result.score = pos.root_moves[0].score;
-                result.pv = pos.root_moves[0].pv.clone();
+                result.depth = tv.completed_depth;
+                result.score = root_moves[0].score;
+                result.pv = root_moves[0].pv.clone();
             }
         }
     }
